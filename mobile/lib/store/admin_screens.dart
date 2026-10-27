@@ -1,0 +1,424 @@
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../api_client.dart';
+import '../format.dart';
+import '../models.dart';
+import '../screens/login_screen.dart' show passwordProblem;
+import '../widgets/common.dart';
+
+/// Categorias de cada departamento (ex.: Roupas › Vestidos).
+class CategoriesScreen extends StatefulWidget {
+  const CategoriesScreen({super.key, required this.api});
+
+  final ApiClient api;
+
+  @override
+  State<CategoriesScreen> createState() => _CategoriesScreenState();
+}
+
+class _CategoriesScreenState extends State<CategoriesScreen> {
+  List<Category>? _list;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final list = await widget.api.get('/api/store/categories') as List;
+      if (mounted) setState(() => _list = list.map((c) => Category.fromJson(c as Map<String, dynamic>)).toList());
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _edit([Category? c]) async {
+    final name = TextEditingController(text: c?.name ?? '');
+    var department = c?.department ?? Department.roupas;
+    var active = c?.active ?? true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: Text(c == null ? 'Nova categoria' : 'Editar categoria'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            DropdownButtonFormField<Department>(
+              initialValue: department,
+              decoration: const InputDecoration(labelText: 'Departamento'),
+              items: [for (final d in Department.values) DropdownMenuItem(value: d, child: Text(d.label))],
+              onChanged: (d) => setLocal(() => department = d!),
+            ),
+            const SizedBox(height: 12),
+            TextField(controller: name, decoration: const InputDecoration(labelText: 'Nome (ex.: Vestidos, Tênis, Colares)')),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Aparece na vitrine'),
+              value: active,
+              onChanged: (v) => setLocal(() => active = v),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Voltar')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Salvar')),
+          ],
+        ),
+      ),
+    );
+    if (ok == true) {
+      final body = {'department': department.api, 'name': name.text.trim(), 'position': c?.position ?? 0, 'active': active};
+      try {
+        if (c == null) {
+          await widget.api.post('/api/store/categories', body);
+        } else {
+          await widget.api.put('/api/store/categories/${c.id}', body);
+        }
+        await _load();
+      } catch (e) {
+        if (mounted) showError(context, e);
+      }
+    }
+    name.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = _list;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Categorias')),
+      floatingActionButton: FloatingActionButton(onPressed: () => _edit(), child: const Icon(Icons.add_rounded)),
+      body: list == null
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(children: [
+              for (final d in Department.values) ...[
+                ListTile(title: Text(d.label, style: Theme.of(context).textTheme.titleMedium)),
+                for (final c in list.where((c) => c.department == d))
+                  ListTile(
+                    title: Text(c.name),
+                    trailing: c.active ? null : const Text('Oculta'),
+                    onTap: () => _edit(c),
+                  ),
+              ],
+              const SizedBox(height: 80),
+            ]),
+    );
+  }
+}
+
+/// Clientes: busca, contato e bloqueio (dono) — bloqueado não entra nem faz pedidos.
+class CustomersScreen extends StatefulWidget {
+  const CustomersScreen({super.key, required this.api, required this.canBlock});
+
+  final ApiClient api;
+  final bool canBlock;
+
+  @override
+  State<CustomersScreen> createState() => _CustomersScreenState();
+}
+
+class _CustomersScreenState extends State<CustomersScreen> {
+  String _q = '';
+  var _key = GlobalKey<PagedListState<Map<String, dynamic>>>();
+
+  Future<void> _toggleBlock(Map<String, dynamic> c) async {
+    final blocked = c['blocked'] as bool;
+    String? reason;
+    if (!blocked) {
+      final controller = TextEditingController();
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Bloquear ${c['name']}?'),
+          content: TextField(controller: controller, maxLength: 300, decoration: const InputDecoration(labelText: 'Motivo (o cliente vê)')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Voltar')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Bloquear')),
+          ],
+        ),
+      );
+      reason = controller.text.trim();
+      controller.dispose();
+      if (ok != true) return;
+    }
+    try {
+      if (blocked) {
+        await widget.api.post('/api/store/customers/${c['id']}/unblock');
+      } else {
+        await widget.api.post('/api/store/customers/${c['id']}/block', {'reason': reason});
+      }
+      _key.currentState?.refresh();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Clientes'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(64),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: TextField(
+              decoration: const InputDecoration(hintText: 'Nome, e-mail ou telefone', prefixIcon: Icon(Icons.search_rounded), isDense: true),
+              onSubmitted: (v) => setState(() {
+                _q = v.trim();
+                _key = GlobalKey();
+              }),
+            ),
+          ),
+        ),
+      ),
+      body: PagedList<Map<String, dynamic>>(
+        key: _key,
+        load: (page) async => PageResult.fromJson(
+            await widget.api.get('/api/store/customers?${Uri(queryParameters: {'page': '$page', 'q': _q}).query}')
+                as Map<String, dynamic>,
+            (j) => j),
+        empty: const EmptyState(icon: Icons.people_outline_rounded, text: 'Nenhum cliente encontrado.'),
+        separator: const Divider(height: 1),
+        padding: EdgeInsets.zero,
+        itemBuilder: (context, c) => ListTile(
+          leading: Icon(c['blocked'] == true ? Icons.block_rounded : Icons.person_rounded),
+          title: Text(c['name'] as String),
+          subtitle: Text([c['email'], c['phone'], 'desde ${date(DateTime.parse(c['createdAt'] as String))}']
+              .whereType<String>()
+              .join(' · ')),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (c['phone'] != null)
+              IconButton(
+                icon: const Icon(Icons.chat_rounded),
+                onPressed: () => launchUrl(whatsappUri(c['phone'] as String), mode: LaunchMode.externalApplication),
+              ),
+            if (widget.canBlock)
+              IconButton(
+                tooltip: c['blocked'] == true ? 'Desbloquear' : 'Bloquear',
+                icon: Icon(c['blocked'] == true ? Icons.lock_open_rounded : Icons.block_rounded),
+                onPressed: () => _toggleBlock(c),
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Equipe (dono): funcionários entram pelo mesmo app e veem só a gestão.
+class TeamScreen extends StatefulWidget {
+  const TeamScreen({super.key, required this.api});
+
+  final ApiClient api;
+
+  @override
+  State<TeamScreen> createState() => _TeamScreenState();
+}
+
+class _TeamScreenState extends State<TeamScreen> {
+  List<User>? _team;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final list = await widget.api.get('/api/store/users') as List;
+      if (mounted) setState(() => _team = list.map((u) => User.fromJson(u as Map<String, dynamic>)).toList());
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _add() async {
+    final name = TextEditingController();
+    final email = TextEditingController();
+    final password = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Novo funcionário'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: name, decoration: const InputDecoration(labelText: 'Nome')),
+          const SizedBox(height: 12),
+          TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'E-mail')),
+          const SizedBox(height: 12),
+          TextField(
+            controller: password,
+            obscureText: true,
+            decoration: const InputDecoration(labelText: 'Senha inicial', helperText: '8+ caracteres, letras e números'),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Voltar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Criar')),
+        ],
+      ),
+    );
+    if (ok == true) {
+      final problem = passwordProblem(password.text);
+      if (problem != null) {
+        if (mounted) showInfo(context, problem);
+      } else {
+        try {
+          await widget.api.post('/api/store/users',
+              {'name': name.text.trim(), 'email': email.text.trim(), 'password': password.text, 'role': 'STAFF'});
+          await _load();
+        } catch (e) {
+          if (mounted) showError(context, e);
+        }
+      }
+    }
+    for (final c in [name, email, password]) {
+      c.dispose();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final team = _team;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Equipe')),
+      floatingActionButton: FloatingActionButton(onPressed: _add, child: const Icon(Icons.person_add_rounded)),
+      body: team == null
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(children: [
+              for (final u in team)
+                ListTile(
+                  leading: Icon(u.isOwner ? Icons.workspace_premium_rounded : Icons.badge_rounded),
+                  title: Text(u.name),
+                  subtitle: Text('${u.email} · ${u.isOwner ? 'dono' : 'funcionário'}'),
+                  trailing: u.isOwner
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.person_remove_rounded),
+                          onPressed: () async {
+                            if (!await confirm(context, 'Remover ${u.name}?', 'Ele sai do app na hora e para de receber os avisos.',
+                                ok: 'Remover')) {
+                              return;
+                            }
+                            try {
+                              await widget.api.delete('/api/store/users/${u.id}');
+                              await _load();
+                            } catch (e) {
+                              if (context.mounted) showError(context, e);
+                            }
+                          },
+                        ),
+                ),
+            ]),
+    );
+  }
+}
+
+/// Dados da loja (dono): nome, WhatsApp, retirada, entrega e frete.
+class StoreSettingsScreen extends StatefulWidget {
+  const StoreSettingsScreen({super.key, required this.api});
+
+  final ApiClient api;
+
+  @override
+  State<StoreSettingsScreen> createState() => _StoreSettingsScreenState();
+}
+
+class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
+  final _name = TextEditingController();
+  final _whatsapp = TextEditingController();
+  final _instagram = TextEditingController();
+  final _address = TextEditingController();
+  final _fee = TextEditingController();
+  final _free = TextEditingController();
+  bool _pickup = true;
+  bool _delivery = true;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.api.get('/api/public/store').then((j) {
+      final s = StoreInfo.fromJson(j as Map<String, dynamic>);
+      if (!mounted) return;
+      setState(() {
+        _name.text = s.name;
+        _whatsapp.text = s.whatsapp ?? '';
+        _instagram.text = s.instagram ?? '';
+        _address.text = s.pickupAddress ?? '';
+        _fee.text = s.deliveryFee.toStringAsFixed(2).replaceAll('.', ',');
+        _free.text = s.freeDeliveryFrom?.toStringAsFixed(2).replaceAll('.', ',') ?? '';
+        _pickup = s.pickupEnabled;
+        _delivery = s.deliveryEnabled;
+        _loaded = true;
+      });
+    }).catchError((Object e) {
+      if (mounted) showError(context, e);
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final c in [_name, _whatsapp, _instagram, _address, _fee, _free]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  static double? _money(String s) => double.tryParse(s.trim().replaceAll('.', '').replaceAll(',', '.'));
+
+  Future<void> _save() async {
+    try {
+      await widget.api.put('/api/store/settings', {
+        'name': _name.text.trim(),
+        'whatsapp': _whatsapp.text.trim(),
+        'instagram': _instagram.text.trim(),
+        'pickupAddress': _address.text.trim(),
+        'pickupEnabled': _pickup,
+        'deliveryEnabled': _delivery,
+        'deliveryFee': _money(_fee.text) ?? 0,
+        'freeDeliveryFrom': _free.text.trim().isEmpty ? null : _money(_free.text),
+      });
+      if (mounted) showInfo(context, 'Dados da loja salvos.');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Dados da loja')),
+      body: !_loaded
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(padding: const EdgeInsets.all(16), children: [
+              TextField(controller: _name, decoration: const InputDecoration(labelText: 'Nome da loja')),
+              const SizedBox(height: 12),
+              TextField(controller: _whatsapp, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'WhatsApp')),
+              const SizedBox(height: 12),
+              TextField(controller: _instagram, decoration: const InputDecoration(labelText: 'Instagram', prefixText: '@')),
+              const SizedBox(height: 12),
+              TextField(controller: _address, decoration: const InputDecoration(labelText: 'Endereço para retirada')),
+              SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Retirada na loja'), value: _pickup, onChanged: (v) => setState(() => _pickup = v)),
+              SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Entrega'), value: _delivery, onChanged: (v) => setState(() => _delivery = v)),
+              if (_delivery) ...[
+                TextField(
+                  controller: _fee,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Taxa de entrega', prefixText: 'R\$ '),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _free,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Entrega grátis a partir de (opcional)', prefixText: 'R\$ '),
+                ),
+              ],
+              const SizedBox(height: 20),
+              FilledButton(onPressed: _save, child: const Text('Salvar')),
+            ]),
+    );
+  }
+}

@@ -1,0 +1,40 @@
+# Desenvolvimento local: banco + API. Segredos de produção ficam no .env do servidor (veja .env.example).
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: loja
+      POSTGRES_USER: loja
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-loja}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loja"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/loja
+      DB_USER: loja
+      DB_PASSWORD: ${DB_PASSWORD:-loja}
+      JWT_SECRET: ${JWT_SECRET:-troque-este-segredo-com-32-caracteres-ou-mais}
+      STORE_OWNER_EMAIL: ${STORE_OWNER_EMAIL:-dono@lojamax.local}
+      STORE_OWNER_PASSWORD: ${STORE_OWNER_PASSWORD:-TroqueEssaSenha1}
+    ports:
+      - "8080:8080"
+    volumes:
+      - media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  media:

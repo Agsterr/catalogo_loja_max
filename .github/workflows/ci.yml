@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "ccr-*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API (testes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: loja_test
+          POSTGRES_USER: loja
+          POSTGRES_PASSWORD: loja
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U loja"
+          --health-interval 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Testes
+        working-directory: backend
+        env:
+          TEST_DB_URL: jdbc:postgresql://localhost:5432/loja_test
+          DB_USER: loja
+          DB_PASSWORD: loja
+        run: mvn -B -q verify
+
+  mobile:
+    name: App Flutter (analyze, testes, APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Analyze e testes
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter analyze
+          flutter test
+      # APK de release (R8) para pegar erro de Gradle/Manifest/plugin nativo. Com os secrets do Firebase
+      # e API_URL configurados ele já sai com push; sem key.properties é assinado com a chave de debug.
+      - name: Build APK
+        working-directory: mobile
+        env:
+          API_URL: ${{ vars.API_URL }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_SENDER_ID: ${{ secrets.FIREBASE_SENDER_ID }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          flutter build apk --release \
+            --dart-define=API_URL="${API_URL:-https://api.lojamax.com.br}" \
+            --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" \
+            --dart-define=FIREBASE_APP_ID="$FIREBASE_APP_ID" \
+            --dart-define=FIREBASE_SENDER_ID="$FIREBASE_SENDER_ID" \
+            --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loja-max-apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14

@@ -1,0 +1,545 @@
+// Modelos das respostas da API (mesmos nomes de campo dos DTOs do Spring).
+
+double _d(Object? v) => v == null ? 0 : (v as num).toDouble();
+double? _dn(Object? v) => v == null ? null : (v as num).toDouble();
+DateTime _dt(Object? v) => DateTime.parse(v as String);
+List<T> _list<T>(Object? v, T Function(Map<String, dynamic>) f) =>
+    (v as List? ?? const []).map((e) => f(e as Map<String, dynamic>)).toList();
+
+enum Role { owner, staff, customer }
+
+Role _role(String v) => switch (v) { 'OWNER' => Role.owner, 'STAFF' => Role.staff, _ => Role.customer };
+
+class User {
+  const User({required this.id, required this.name, required this.email, this.phone, required this.role});
+
+  final int id;
+  final String name;
+  final String email;
+  final String? phone;
+  final Role role;
+
+  bool get isTeam => role == Role.owner || role == Role.staff;
+  bool get isOwner => role == Role.owner;
+
+  factory User.fromJson(Map<String, dynamic> j) => User(
+        id: j['id'] as int,
+        name: j['name'] as String,
+        email: j['email'] as String,
+        phone: j['phone'] as String?,
+        role: _role(j['role'] as String),
+      );
+}
+
+/// Seções da loja.
+enum Department {
+  roupas('ROUPAS', 'Roupas'),
+  calcados('CALCADOS', 'Calçados'),
+  bijuterias('BIJUTERIAS', 'Bijuterias');
+
+  const Department(this.api, this.label);
+
+  final String api;
+  final String label;
+
+  static Department of(String v) => values.firstWhere((d) => d.api == v);
+}
+
+class PageResult<T> {
+  const PageResult(this.items, this.page, this.hasMore, this.total);
+
+  final List<T> items;
+  final int page;
+  final bool hasMore;
+  final int total;
+
+  factory PageResult.fromJson(Map<String, dynamic> j, T Function(Map<String, dynamic>) f) =>
+      PageResult(_list(j['items'], f), j['page'] as int, j['hasMore'] as bool, (j['total'] as num).toInt());
+}
+
+class Category {
+  const Category({required this.id, required this.department, required this.name, required this.position, required this.active});
+
+  final int id;
+  final Department department;
+  final String name;
+  final int position;
+  final bool active;
+
+  factory Category.fromJson(Map<String, dynamic> j) => Category(
+        id: j['id'] as int,
+        department: Department.of(j['department'] as String),
+        name: j['name'] as String,
+        position: j['position'] as int,
+        active: j['active'] as bool,
+      );
+}
+
+class Photo {
+  const Photo({required this.id, required this.url, required this.thumbUrl, required this.width, required this.height});
+
+  final int id;
+  final String url;
+  final String thumbUrl;
+  final int width;
+  final int height;
+
+  factory Photo.fromJson(Map<String, dynamic> j) => Photo(
+        id: j['id'] as int,
+        url: j['url'] as String,
+        thumbUrl: j['thumbUrl'] as String,
+        width: j['width'] as int,
+        height: j['height'] as int,
+      );
+}
+
+class Variant {
+  const Variant({required this.id, required this.size, required this.color, this.sku, required this.stock, required this.active});
+
+  final int id;
+  final String size;
+  final String color;
+  final String? sku;
+  final int stock;
+  final bool active;
+
+  String get label => color.isEmpty ? size : '$size · $color';
+
+  factory Variant.fromJson(Map<String, dynamic> j) => Variant(
+        id: j['id'] as int,
+        size: j['size'] as String,
+        color: j['color'] as String? ?? '',
+        sku: j['sku'] as String?,
+        stock: j['stock'] as int,
+        active: j['active'] as bool,
+      );
+}
+
+/// Cartão da vitrine.
+class ProductCard {
+  const ProductCard({
+    required this.id,
+    required this.name,
+    required this.department,
+    this.brand,
+    required this.price,
+    required this.finalPrice,
+    required this.discountPercent,
+    this.thumbUrl,
+    required this.inStock,
+    required this.featured,
+    required this.totalStock,
+    required this.active,
+  });
+
+  final int id;
+  final String name;
+  final Department department;
+  final String? brand;
+  final double price;
+  final double finalPrice;
+  final int discountPercent;
+  final String? thumbUrl;
+  final bool inStock;
+  final bool featured;
+  final int totalStock;
+  final bool active;
+
+  bool get onSale => finalPrice < price;
+
+  factory ProductCard.fromJson(Map<String, dynamic> j) => ProductCard(
+        id: j['id'] as int,
+        name: j['name'] as String,
+        department: Department.of(j['department'] as String),
+        brand: j['brand'] as String?,
+        price: _d(j['price']),
+        finalPrice: _d(j['finalPrice']),
+        discountPercent: j['discountPercent'] as int,
+        thumbUrl: j['thumbUrl'] as String?,
+        inStock: j['inStock'] as bool,
+        featured: j['featured'] as bool,
+        totalStock: j['totalStock'] as int,
+        active: j['active'] as bool,
+      );
+}
+
+class Product {
+  const Product({
+    required this.id,
+    required this.name,
+    this.description,
+    required this.department,
+    this.categoryId,
+    this.categoryName,
+    this.brand,
+    required this.price,
+    this.salePrice,
+    required this.finalPrice,
+    required this.discountPercent,
+    this.promotion,
+    required this.minStock,
+    required this.active,
+    required this.featured,
+    required this.totalStock,
+    required this.variants,
+    required this.photos,
+  });
+
+  final int id;
+  final String name;
+  final String? description;
+  final Department department;
+  final int? categoryId;
+  final String? categoryName;
+  final String? brand;
+  final double price;
+  final double? salePrice;
+  final double finalPrice;
+  final int discountPercent;
+  final String? promotion;
+  final int minStock;
+  final bool active;
+  final bool featured;
+  final int totalStock;
+  final List<Variant> variants;
+  final List<Photo> photos;
+
+  bool get onSale => finalPrice < price;
+
+  factory Product.fromJson(Map<String, dynamic> j) => Product(
+        id: j['id'] as int,
+        name: j['name'] as String,
+        description: j['description'] as String?,
+        department: Department.of(j['department'] as String),
+        categoryId: j['categoryId'] as int?,
+        categoryName: j['categoryName'] as String?,
+        brand: j['brand'] as String?,
+        price: _d(j['price']),
+        salePrice: _dn(j['salePrice']),
+        finalPrice: _d(j['finalPrice']),
+        discountPercent: j['discountPercent'] as int,
+        promotion: j['promotion'] as String?,
+        minStock: j['minStock'] as int,
+        active: j['active'] as bool,
+        featured: j['featured'] as bool,
+        totalStock: j['totalStock'] as int,
+        variants: _list(j['variants'], Variant.fromJson),
+        photos: _list(j['photos'], Photo.fromJson),
+      );
+}
+
+class StoreInfo {
+  const StoreInfo({
+    required this.name,
+    this.whatsapp,
+    this.instagram,
+    this.pickupAddress,
+    required this.pickupEnabled,
+    required this.deliveryEnabled,
+    required this.deliveryFee,
+    this.freeDeliveryFrom,
+  });
+
+  final String name;
+  final String? whatsapp;
+  final String? instagram;
+  final String? pickupAddress;
+  final bool pickupEnabled;
+  final bool deliveryEnabled;
+  final double deliveryFee;
+  final double? freeDeliveryFrom;
+
+  factory StoreInfo.fromJson(Map<String, dynamic> j) => StoreInfo(
+        name: j['name'] as String,
+        whatsapp: j['whatsapp'] as String?,
+        instagram: j['instagram'] as String?,
+        pickupAddress: j['pickupAddress'] as String?,
+        pickupEnabled: j['pickupEnabled'] as bool,
+        deliveryEnabled: j['deliveryEnabled'] as bool,
+        deliveryFee: _d(j['deliveryFee']),
+        freeDeliveryFrom: _dn(j['freeDeliveryFrom']),
+      );
+}
+
+enum OrderStatus {
+  pending('PENDING', 'Aguardando confirmação'),
+  confirmed('CONFIRMED', 'Confirmado'),
+  ready('READY', 'Pronto para retirar'),
+  shipped('SHIPPED', 'Saiu para entrega'),
+  delivered('DELIVERED', 'Entregue'),
+  canceled('CANCELED', 'Cancelado');
+
+  const OrderStatus(this.api, this.label);
+
+  final String api;
+  final String label;
+
+  bool get finished => this == delivered || this == canceled;
+
+  static OrderStatus of(String v) => values.firstWhere((s) => s.api == v);
+}
+
+const paymentLabels = {'PIX': 'Pix', 'CARD': 'Cartão', 'CASH': 'Dinheiro'};
+
+class OrderSummary {
+  const OrderSummary({
+    required this.id,
+    required this.code,
+    required this.status,
+    required this.delivery,
+    required this.paid,
+    required this.total,
+    required this.itemCount,
+    required this.customerName,
+    this.firstItem,
+    this.thumbUrl,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String code;
+  final OrderStatus status;
+  final bool delivery;
+  final bool paid;
+  final double total;
+  final int itemCount;
+  final String customerName;
+  final String? firstItem;
+  final String? thumbUrl;
+  final DateTime createdAt;
+
+  factory OrderSummary.fromJson(Map<String, dynamic> j) => OrderSummary(
+        id: j['id'] as int,
+        code: j['code'] as String,
+        status: OrderStatus.of(j['status'] as String),
+        delivery: j['deliveryMethod'] == 'DELIVERY',
+        paid: j['paid'] as bool,
+        total: _d(j['total']),
+        itemCount: j['itemCount'] as int,
+        customerName: j['customerName'] as String,
+        firstItem: j['firstItem'] as String?,
+        thumbUrl: j['thumbUrl'] as String?,
+        createdAt: _dt(j['createdAt']),
+      );
+}
+
+class OrderItem {
+  const OrderItem({
+    required this.productId,
+    required this.productName,
+    required this.size,
+    required this.color,
+    required this.unitPrice,
+    required this.quantity,
+    required this.total,
+    this.thumbUrl,
+  });
+
+  final int productId;
+  final String productName;
+  final String size;
+  final String color;
+  final double unitPrice;
+  final int quantity;
+  final double total;
+  final String? thumbUrl;
+
+  String get variant => color.isEmpty ? size : '$size · $color';
+
+  factory OrderItem.fromJson(Map<String, dynamic> j) => OrderItem(
+        productId: j['productId'] as int,
+        productName: j['productName'] as String,
+        size: j['size'] as String,
+        color: j['color'] as String? ?? '',
+        unitPrice: _d(j['unitPrice']),
+        quantity: j['quantity'] as int,
+        total: _d(j['total']),
+        thumbUrl: j['thumbUrl'] as String?,
+      );
+}
+
+class OrderEvent {
+  const OrderEvent({required this.status, this.note, required this.byCustomer, required this.createdAt});
+
+  final OrderStatus status;
+  final String? note;
+  final bool byCustomer;
+  final DateTime createdAt;
+
+  factory OrderEvent.fromJson(Map<String, dynamic> j) => OrderEvent(
+        status: OrderStatus.of(j['status'] as String),
+        note: j['note'] as String?,
+        byCustomer: j['byCustomer'] as bool,
+        createdAt: _dt(j['createdAt']),
+      );
+}
+
+class Customer {
+  const Customer({required this.id, required this.name, required this.email, this.phone});
+
+  final int id;
+  final String name;
+  final String email;
+  final String? phone;
+
+  factory Customer.fromJson(Map<String, dynamic> j) =>
+      Customer(id: j['id'] as int, name: j['name'] as String, email: j['email'] as String, phone: j['phone'] as String?);
+}
+
+class Order {
+  const Order({
+    required this.id,
+    required this.code,
+    required this.status,
+    required this.nextStatuses,
+    required this.canCancel,
+    required this.delivery,
+    required this.paymentMethod,
+    required this.paid,
+    this.address,
+    this.notes,
+    required this.subtotal,
+    required this.discount,
+    required this.deliveryFee,
+    required this.total,
+    this.cancelReason,
+    required this.createdAt,
+    this.customer,
+    required this.items,
+    required this.events,
+  });
+
+  final int id;
+  final String code;
+  final OrderStatus status;
+  final List<OrderStatus> nextStatuses;
+  final bool canCancel;
+  final bool delivery;
+  final String paymentMethod;
+  final bool paid;
+  final String? address;
+  final String? notes;
+  final double subtotal;
+  final double discount;
+  final double deliveryFee;
+  final double total;
+  final String? cancelReason;
+  final DateTime createdAt;
+
+  /// Só nas respostas da gestão.
+  final Customer? customer;
+  final List<OrderItem> items;
+  final List<OrderEvent> events;
+
+  factory Order.fromJson(Map<String, dynamic> j) => Order(
+        id: j['id'] as int,
+        code: j['code'] as String,
+        status: OrderStatus.of(j['status'] as String),
+        nextStatuses: (j['nextStatuses'] as List? ?? const []).map((s) => OrderStatus.of(s as String)).toList(),
+        canCancel: j['canCancel'] as bool,
+        delivery: j['deliveryMethod'] == 'DELIVERY',
+        paymentMethod: j['paymentMethod'] as String,
+        paid: j['paid'] as bool,
+        address: j['address'] as String?,
+        notes: j['notes'] as String?,
+        subtotal: _d(j['subtotal']),
+        discount: _d(j['discount']),
+        deliveryFee: _d(j['deliveryFee']),
+        total: _d(j['total']),
+        cancelReason: j['cancelReason'] as String?,
+        createdAt: _dt(j['createdAt']),
+        customer: j['customer'] == null ? null : Customer.fromJson(j['customer'] as Map<String, dynamic>),
+        items: _list(j['items'], OrderItem.fromJson),
+        events: _list(j['events'], OrderEvent.fromJson),
+      );
+}
+
+class AppNotification {
+  const AppNotification({
+    required this.id,
+    required this.type,
+    this.orderId,
+    this.productId,
+    required this.title,
+    required this.message,
+    required this.createdAt,
+    required this.read,
+  });
+
+  final int id;
+  final String type;
+  final int? orderId;
+  final int? productId;
+  final String title;
+  final String message;
+  final DateTime createdAt;
+  final bool read;
+
+  factory AppNotification.fromJson(Map<String, dynamic> j) => AppNotification(
+        id: j['id'] as int,
+        type: j['type'] as String,
+        orderId: j['orderId'] as int?,
+        productId: j['productId'] as int?,
+        title: j['title'] as String,
+        message: j['message'] as String,
+        createdAt: _dt(j['createdAt']),
+        read: j['read'] as bool,
+      );
+}
+
+class Inbox {
+  const Inbox(this.unread, this.items);
+
+  final int unread;
+  final List<AppNotification> items;
+
+  factory Inbox.fromJson(Map<String, dynamic> j) => Inbox((j['unread'] as num).toInt(), _list(j['items'], AppNotification.fromJson));
+}
+
+class Promotion {
+  const Promotion({
+    required this.id,
+    required this.title,
+    this.description,
+    required this.discountPercent,
+    this.department,
+    this.categoryId,
+    this.productId,
+    required this.scope,
+    required this.startsAt,
+    required this.endsAt,
+    required this.active,
+    required this.running,
+    required this.notifyCustomers,
+  });
+
+  final int id;
+  final String title;
+  final String? description;
+  final int discountPercent;
+  final Department? department;
+  final int? categoryId;
+  final int? productId;
+  final String scope;
+  final DateTime startsAt;
+  final DateTime endsAt;
+  final bool active;
+  final bool running;
+  final bool notifyCustomers;
+
+  factory Promotion.fromJson(Map<String, dynamic> j) => Promotion(
+        id: j['id'] as int,
+        title: j['title'] as String,
+        description: j['description'] as String?,
+        discountPercent: j['discountPercent'] as int,
+        department: j['department'] == null ? null : Department.of(j['department'] as String),
+        categoryId: j['categoryId'] as int?,
+        productId: j['productId'] as int?,
+        scope: j['scope'] as String,
+        startsAt: _dt(j['startsAt']),
+        endsAt: _dt(j['endsAt']),
+        active: j['active'] as bool,
+        running: j['running'] as bool,
+        notifyCustomers: j['notifyCustomers'] as bool,
+      );
+}
