@@ -62,7 +62,7 @@ public class PushController {
         CurrentUser me = CurrentUser.of(jwt);
         PushDevice d = devices.findByToken(req.token()).orElseGet(PushDevice::new);
         d.setToken(req.token());
-        d.setApp(me.isTeam() ? PushNotifier.STAFF : PushNotifier.CLIENT);
+        d.setApp(me.isTeam() ? PushNotifier.STAFF : me.role() == com.max.loja.auth.Role.COURIER ? PushNotifier.COURIER : PushNotifier.CLIENT);
         d.setUserId(me.id());
         if (req.promoNotifications() != null) {
             d.setPromoNotifications(req.promoNotifications());

@@ -76,6 +76,15 @@ public class AuthController {
         return service.registerStore(req);
     }
 
+    /** Entregador se cadastra (pendente até a plataforma aprovar). */
+    @PostMapping("/api/auth/register-courier")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TokenResponse registerCourier(@Valid @RequestBody com.max.loja.delivery.CourierDtos.RegisterRequest req,
+                                         HttpServletRequest http) {
+        rateLimiter.check("register-courier-ip:" + ClientIp.of(http), 5);
+        return service.registerCourier(req);
+    }
+
     @PostMapping("/api/auth/login")
     public TokenResponse login(@Valid @RequestBody LoginRequest req, HttpServletRequest http) {
         rateLimiter.check("login-ip:" + ClientIp.of(http), 30);

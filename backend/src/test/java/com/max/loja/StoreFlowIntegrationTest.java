@@ -83,6 +83,9 @@ class StoreFlowIntegrationTest {
     @Autowired
     PushOutboxWorker pushWorker;
 
+    @Autowired
+    com.max.loja.delivery.DispatchService dispatch;
+
     @MockitoBean
     PushSender push;
 
@@ -562,6 +565,140 @@ class StoreFlowIntegrationTest {
                 status().isCreated());
         rateLimiter.reset();
         return new Shop(slug, res.get("token").asText());
+    }
+
+    @Test
+    void courierDeliversAnOrderEndToEnd() throws Exception {
+        jdbc.update("delete from delivery_job"); // o banco de teste é compartilhado: corridas de execuções anteriores sujariam o mural
+        Shop shop = openStore("Loja Moto");
+        String owner = shop.owner();
+        Map<String, Object> settings = new HashMap<>();
+        settings.put("name", "Loja Moto");
+        settings.put("pickupEnabled", true);
+        settings.put("deliveryEnabled", true);
+        settings.put("deliveryFee", 0);
+        settings.put("city", "Cidade Teste");
+        settings.put("state", "SP");
+        settings.put("courierDelivery", true);
+        call(owner, put("/api/store/settings"), settings, status().isUnprocessableEntity()); // falta marcar onde a loja fica
+        settings.put("latitude", -23.5505);
+        settings.put("longitude", -46.6333);
+        assertThat(call(owner, put("/api/store/settings"), settings, status().isOk()).get("courierDelivery").asBoolean()).isTrue();
+        JsonNode product = call(owner, post("/api/store/products"), product("Camiseta", "ROUPAS", null, 80,
+                List.of(variant(null, "M", "Preto", 9))), status().isCreated());
+        long variant = product.get("variants").get(0).get("id").asLong();
+
+        // entregadores: cadastro pendente → sem acesso até a plataforma aprovar
+        String ze = registerCourier("Zé Moto", -23.56, -46.64);
+        String bia = registerCourier("Bia Bike", -23.57, -46.65);
+        call(ze, get("/api/courier/jobs/open"), null, status().isForbidden());
+        String admin = login("admin@plataforma.test", "SenhaDoAdmin123");
+        call(ze, get("/api/courier/jobs/open"), null, status().isForbidden());
+        call(admin, post("/api/platform/couriers/" + id(call(ze, get("/api/courier/me"), null, status().isOk())) + "/approve"), null,
+                status().isNoContent());
+        call(admin, post("/api/platform/couriers/" + id(call(bia, get("/api/courier/me"), null, status().isOk())) + "/approve"), null,
+                status().isNoContent());
+        call(ze, post("/api/courier/online"), Map.of("online", true, "lat", -23.56, "lng", -46.64), status().isOk());
+        call(bia, post("/api/courier/online"), Map.of("online", true, "lat", -23.57, "lng", -46.65), status().isOk());
+        call(ze, get("/api/courier/jobs/open"), null, status().isOk());
+        call(shop.owner(), get("/api/courier/me"), null, status().isForbidden()); // lojista não é entregador
+
+        // pedido com entrega: precisa da localização, não aceita dinheiro, taxa vem da distância
+        String carla = register("Carla");
+        Map<String, Object> req = new HashMap<>(Map.of("items", List.of(Map.of("variantId", variant, "quantity", 1)),
+                "deliveryMethod", "DELIVERY", "paymentMethod", "PIX", "address", "Rua das Flores, 123 - Centro"));
+        call(carla, post(shop.orders()), req, status().isUnprocessableEntity());
+        req.put("deliveryLat", -23.56);
+        req.put("deliveryLng", -46.64);
+        req.put("paymentMethod", "CASH");
+        call(carla, post(shop.orders()), req, status().isUnprocessableEntity());
+        req.put("paymentMethod", "PIX");
+        JsonNode order = call(carla, post(shop.orders()), req, status().isCreated());
+        long orderId = id(order);
+        assertThat(order.get("deliveryFee").decimalValue()).isEqualByComparingTo("6.00"); // ~1,3 km: vale o mínimo da corrida
+        assertThat(order.get("courier").get("status").asText()).isEqualTo("WAITING");
+
+        // a loja confirma, mas sem pagamento não abre corrida; a coleta/entrega são do entregador
+        call(owner, post("/api/store/orders/" + orderId + "/status"), Map.of("status", "CONFIRMED"), status().isOk());
+        assertThat(call(ze, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isZero();
+        call(owner, post("/api/store/orders/" + orderId + "/status"), Map.of("status", "SHIPPED"), status().isUnprocessableEntity());
+        call(owner, post("/api/store/orders/" + orderId + "/paid"), Map.of("paid", true), status().isOk());
+        JsonNode open = call(ze, get("/api/courier/jobs/open"), null, status().isOk());
+        assertThat(open.get("total").asLong()).isEqualTo(1);
+        JsonNode card = open.get("items").get(0);
+        assertThat(card.get("fee").decimalValue()).isEqualByComparingTo("6.00");
+        assertThat(card.has("dropoffAddress")).isFalse(); // endereço do cliente só depois do aceite
+        long jobId = id(card);
+
+        // só um aceita
+        JsonNode accepted = call(ze, post("/api/courier/jobs/" + jobId + "/accept"), null, status().isOk());
+        assertThat(accepted.get("dropoffAddress").asText()).contains("Rua das Flores");
+        call(bia, post("/api/courier/jobs/" + jobId + "/accept"), null, status().isConflict());
+        assertThat(call(bia, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isZero();
+        call(bia, post("/api/courier/jobs/" + jobId + "/pickup"), Map.of("code", "0000"), status().isNotFound()); // não é dela
+
+        // códigos: a loja vê o de coleta, o cliente o de entrega, o entregador digita os dois
+        JsonNode forStore = call(owner, get("/api/store/orders/" + orderId), null, status().isOk());
+        JsonNode forCustomer = call(carla, get(shop.orders() + "/" + orderId), null, status().isOk());
+        String pickupCode = forStore.get("courier").get("pickupCode").asText();
+        String deliveryCode = forCustomer.get("courier").get("deliveryCode").asText();
+        assertThat(forStore.get("courier").get("courierName").asText()).isEqualTo("Zé Moto");
+        assertThat(forStore.get("courier").get("deliveryCode").isNull()).isTrue();
+        assertThat(forCustomer.get("courier").get("pickupCode").isNull()).isTrue();
+        call(ze, post("/api/courier/jobs/" + jobId + "/deliver"), Map.of("code", deliveryCode), status().isUnprocessableEntity()); // antes de coletar
+        call(ze, post("/api/courier/jobs/" + jobId + "/pickup"), Map.of("code", wrong(pickupCode)), status().isUnprocessableEntity());
+        call(ze, post("/api/courier/jobs/" + jobId + "/pickup"), Map.of("code", pickupCode), status().isOk());
+        assertThat(call(owner, get("/api/store/orders/" + orderId), null, status().isOk()).get("status").asText()).isEqualTo("SHIPPED");
+        call(ze, post("/api/courier/jobs/" + jobId + "/deliver"), Map.of("code", deliveryCode), status().isOk());
+        assertThat(call(carla, get(shop.orders() + "/" + orderId), null, status().isOk()).get("status").asText()).isEqualTo("DELIVERED");
+        JsonNode earnings = call(ze, get("/api/courier/earnings"), null, status().isOk());
+        assertThat(earnings.get("today").get("count").asLong()).isEqualTo(1);
+        assertThat(earnings.get("today").get("total").decimalValue()).isEqualByComparingTo("6.00");
+
+        // segundo pedido: o entregador desiste, ninguém aceita, a loja chama de novo; cancelar derruba a corrida
+        req.put("deliveryLat", -23.56);
+        long second = id(call(carla, post(shop.orders()), req, status().isCreated()));
+        call(owner, post("/api/store/orders/" + second + "/paid"), Map.of("paid", true), status().isOk());
+        call(owner, post("/api/store/orders/" + second + "/status"), Map.of("status", "CONFIRMED"), status().isOk());
+        long job2 = id(call(ze, get("/api/courier/jobs/open"), null, status().isOk()).get("items").get(0));
+        call(ze, post("/api/courier/jobs/" + job2 + "/accept"), null, status().isOk());
+        call(ze, post("/api/courier/jobs/" + job2 + "/cancel"), null, status().isNoContent());
+        assertThat(call(bia, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isEqualTo(1);
+        jdbc.update("update delivery_job set expires_at = ? where id = ?", LocalDateTime.now(clock).minusMinutes(1), job2);
+        dispatch.expireOld();
+        assertThat(call(owner, get("/api/store/orders/" + second), null, status().isOk()).get("courier").get("canRetry").asBoolean()).isTrue();
+        call(owner, post("/api/store/orders/" + second + "/courier/retry"), null, status().isNoContent());
+        assertThat(call(bia, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isEqualTo(1);
+        call(owner, post("/api/store/orders/" + second + "/status"), Map.of("status", "CANCELED"), status().isOk());
+        assertThat(call(bia, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isZero();
+
+        // excluir a conta do entregador apaga os dados pessoais dele (e tira ele do mural)
+        call(bia, post("/api/me/delete"), Map.of("password", "Senha1234"), status().isNoContent());
+        assertThat(jdbc.queryForObject("select count(*) from courier where phone = '-' and status = 'BLOCKED'", Integer.class))
+                .isGreaterThanOrEqualTo(1);
+
+        // outra loja não mexe na corrida da primeira
+        Shop other = openStore("Outra Loja");
+        call(other.owner(), post("/api/store/orders/" + second + "/courier/retry"), null, status().isNotFound());
+    }
+
+    private String registerCourier(String name, double lat, double lng) throws Exception {
+        Map<String, Object> body = new HashMap<>();
+        body.put("name", name);
+        body.put("email", "e-" + UUID.randomUUID() + "@entregador.test");
+        body.put("phone", "11988887777");
+        body.put("password", "Senha1234");
+        body.put("vehicle", "MOTO");
+        body.put("city", "Cidade Teste");
+        body.put("state", "sp");
+        body.put("baseLat", lat);
+        body.put("baseLng", lng);
+        body.put("radiusKm", 10);
+        return call(null, post("/api/auth/register-courier"), body, status().isCreated()).get("token").asText();
+    }
+
+    private static String wrong(String code) {
+        return code.equals("0000") ? "1111" : "0000";
     }
 
     private String code(String secret) {

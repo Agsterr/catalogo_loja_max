@@ -23,6 +23,7 @@ public class PushNotifier {
 
     public static final String STAFF = "STAFF";
     public static final String CLIENT = "CLIENT";
+    public static final String COURIER = "COURIER";
 
     private final PushOutbox outbox;
     private final PushDeviceRepository devices;
@@ -58,6 +59,14 @@ public class PushNotifier {
             return 0;
         }
         return enqueue(devices.findByUserIdIn(List.of(userId)), event, title, body, data);
+    }
+
+    /** Vários usuários de uma vez (corrida nova para os entregadores da região). */
+    public int toUsers(List<Long> userIds, String event, String title, String body, Map<String, String> data) {
+        if (!props.configured() || userIds.isEmpty()) {
+            return 0;
+        }
+        return enqueue(devices.findByUserIdIn(userIds), event, title, body, data);
     }
 
     /** Promoção: celulares que seguem esta loja e aceitam promoções (com ou sem login). */

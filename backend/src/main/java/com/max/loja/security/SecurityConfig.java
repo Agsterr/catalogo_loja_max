@@ -57,6 +57,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/me/**", "/api/me", "/api/notifications/**").authenticated()
                         // Administrador da plataforma: lojas e usuários
                         .requestMatchers("/api/platform/**").hasRole("PLATFORM_ADMIN")
+                        // Entregador (aprovado ou não: o serviço responde "em análise" até a plataforma aprovar)
+                        .requestMatchers("/api/courier/**").hasRole("COURIER")
                         // Compras numa loja (/api/stores/{slug}/...): só clientes
                         .requestMatchers("/api/stores/**").hasRole("CUSTOMER")
                         // Gestão: relatórios, equipe, promoções e dados da loja só o dono

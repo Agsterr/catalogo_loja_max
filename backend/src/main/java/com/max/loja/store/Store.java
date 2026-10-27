@@ -55,6 +55,9 @@ public class Store {
     private Double latitude;
     private Double longitude;
 
+    /** Entrega por entregador da plataforma (taxa pela distância; exige a localização da loja). */
+    private boolean courierDelivery;
+
     /** Faixas de entrega por distância em JSON (veja {@code DeliveryZones}); nulo = taxa fixa. */
     private String deliveryZones;
 

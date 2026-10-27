@@ -57,9 +57,10 @@ class FcmPushSender implements PushSender {
             m.putObject("notification").put("title", title).put("body", body);
             ObjectNode d = m.putObject("data");
             data.forEach(d::put);
-            // canal do Android: "novos_pedidos" (pedido novo para a loja, alerta forte), "pedidos" ou "promocoes" — o app cria os três
+            // canal do Android: "novos_pedidos" (pedido novo para a loja, alerta forte), "pedidos", "promocoes" ou "corridas" (entregador) — cada app cria os seus
             String type = data.get("type");
-            String channel = "promotion".equals(type) || "back_in_stock".equals(type) ? "promocoes"
+            String channel = "courier".equals(type) ? "corridas"
+                    : "promotion".equals(type) || "back_in_stock".equals(type) ? "promocoes"
                     : "team".equals(type) && "NEW_ORDER".equals(data.get("kind")) ? "novos_pedidos" : "pedidos";
             m.putObject("android").put("priority", "HIGH").putObject("notification").put("channel_id", channel);
             HttpResponse<String> res = http.send(HttpRequest.newBuilder(URI.create(api + project + "/messages:send"))

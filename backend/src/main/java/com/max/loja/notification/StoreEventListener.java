@@ -2,6 +2,10 @@ package com.max.loja.notification;
 
 import java.util.Map;
 
+import com.max.loja.auth.AppUser;
+import com.max.loja.auth.AppUserRepository;
+import com.max.loja.delivery.DeliveryJob;
+import com.max.loja.delivery.DeliveryJobRepository;
 import com.max.loja.event.StoreEvents;
 import com.max.loja.notification.NotificationService.Target;
 import com.max.loja.order.CustomerOrder;
@@ -26,9 +30,13 @@ class StoreEventListener {
     private final ProductWatchService watches;
     private final PromotionRepository promotions;
     private final PushNotifier push;
+    private final DeliveryJobRepository jobs;
+    private final AppUserRepository users;
 
     StoreEventListener(NotificationService notifications, OrderService orders, ProductWatchService watches,
-                       PromotionRepository promotions, PushNotifier push) {
+                       PromotionRepository promotions, PushNotifier push, DeliveryJobRepository jobs, AppUserRepository users) {
+        this.jobs = jobs;
+        this.users = users;
         this.notifications = notifications;
         this.orders = orders;
         this.watches = watches;
@@ -109,5 +117,50 @@ class StoreEventListener {
             data.put("productId", String.valueOf(p.getProduct().getId()));
         }
         push.promotion("promo:" + p.getId(), p.getTitle(), body, data);
+    }
+
+    @EventListener
+    void deliveryAccepted(StoreEvents.DeliveryAccepted e) {
+        DeliveryJob j = jobs.findById(e.jobId()).orElse(null);
+        if (j == null) {
+            return;
+        }
+        String who = users.findById(j.getCourierId()).map(AppUser::getName).orElse("O entregador");
+        notifications.toTeam(Notification.Type.DELIVERY_ASSIGNED, "Entregador a caminho · #" + j.getOrderCode(),
+                who + " aceitou a entrega. Passe o código de coleta que está no pedido quando ele chegar.",
+                Target.order(j.getOrderId()), "delivery-accepted:" + j.getId() + ":" + j.getOffers());
+        CustomerOrder o = orders.find(j.getOrderId());
+        notifications.toUser(o.getCustomer().getId(), Notification.Type.ORDER_STATUS, "Entregador a caminho da loja · #" + j.getOrderCode(),
+                who + " vai levar seu pedido. Na entrega, mostre o código que está no pedido.", Target.order(j.getOrderId()),
+                "delivery-accepted-customer:" + j.getId() + ":" + j.getOffers());
+    }
+
+    @EventListener
+    void deliveryReopened(StoreEvents.DeliveryReopened e) {
+        DeliveryJob j = jobs.findById(e.jobId()).orElse(null);
+        if (j != null) {
+            notifications.toTeam(Notification.Type.DELIVERY_PROBLEM, "O entregador desistiu · #" + j.getOrderCode(),
+                    "Já estamos chamando outro entregador para o pedido.", Target.order(j.getOrderId()),
+                    "delivery-reopened:" + j.getId() + ":" + j.getOffers());
+        }
+    }
+
+    @EventListener
+    void deliveryExpired(StoreEvents.DeliveryExpired e) {
+        DeliveryJob j = jobs.findById(e.jobId()).orElse(null);
+        if (j != null) {
+            notifications.toTeam(Notification.Type.DELIVERY_PROBLEM, "Nenhum entregador aceitou · #" + j.getOrderCode(),
+                    "Abra o pedido para chamar de novo, ou faça a entrega por conta própria ou cancele.",
+                    Target.order(j.getOrderId()), "delivery-expired:" + j.getId() + ":" + j.getOffers());
+        }
+    }
+
+    @EventListener
+    void deliveryDone(StoreEvents.DeliveryDone e) {
+        DeliveryJob j = jobs.findById(e.jobId()).orElse(null);
+        if (j != null) {
+            notifications.toTeam(Notification.Type.DELIVERY_DONE, "Entrega concluída · #" + j.getOrderCode(),
+                    "O pedido foi entregue ao cliente.", Target.order(j.getOrderId()), "delivery-done:" + j.getId());
+        }
     }
 }

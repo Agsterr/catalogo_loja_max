@@ -7,6 +7,8 @@ public enum Role {
     STAFF,
     /** Cliente do app: conta única para todas as lojas; vitrine, pedidos dele e avisos dele. */
     CUSTOMER,
+    /** Entregador: pega corridas de várias lojas (app do entregador); só depois de aprovado pela plataforma. */
+    COURIER,
     /** Administrador da plataforma (fora das lojas): bloqueia lojas e usuários. */
     PLATFORM_ADMIN;
 

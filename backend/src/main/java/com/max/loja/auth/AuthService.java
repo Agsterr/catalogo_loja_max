@@ -10,6 +10,8 @@ import com.max.loja.auth.AuthDtos.RegisterStoreRequest;
 import com.max.loja.auth.AuthDtos.TokenResponse;
 import com.max.loja.auth.AuthDtos.UpdateProfileRequest;
 import com.max.loja.auth.AuthDtos.UserResponse;
+import com.max.loja.delivery.CourierDtos;
+import com.max.loja.delivery.CourierService;
 import com.max.loja.security.AccountStatusService;
 import com.max.loja.security.AuditService;
 import com.max.loja.security.JwtService;
@@ -43,12 +45,14 @@ public class AuthService {
     private final AuditService audit;
     private final LoginProperties loginProps;
     private final Clock clock;
+    private final CourierService couriers;
     /** Hash de uma senha qualquer: o login de e-mail inexistente gasta o mesmo tempo (não revela quem tem conta). */
     private final String dummyHash;
 
     public AuthService(AppUserRepository users, StoreRepository stores, PasswordEncoder passwordEncoder,
                        JwtService jwtService, AccountStatusService statuses, TwoFactorService twoFactor,
-                       AuditService audit, LoginProperties loginProps, Clock clock) {
+                       AuditService audit, LoginProperties loginProps, Clock clock, CourierService couriers) {
+        this.couriers = couriers;
         this.users = users;
         this.stores = stores;
         this.passwordEncoder = passwordEncoder;
@@ -67,6 +71,16 @@ public class AuthService {
         ensureEmailFree(req.email());
         AppUser user = newUser(req.name(), req.email(), req.password(), Role.CUSTOMER, null);
         user.setPhone(blankToNull(req.phone()));
+        return token(user);
+    }
+
+    /** Entregador cria a conta pelo app: fica pendente até a plataforma aprovar. */
+    @Transactional
+    public TokenResponse registerCourier(CourierDtos.RegisterRequest req) {
+        ensureEmailFree(req.email());
+        AppUser user = newUser(req.name(), req.email(), req.password(), Role.COURIER, null);
+        user.setPhone(blankToNull(req.phone()));
+        couriers.createProfile(user, req);
         return token(user);
     }
 

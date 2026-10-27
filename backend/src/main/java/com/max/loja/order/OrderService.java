@@ -13,12 +13,17 @@ import java.util.Objects;
 import com.max.loja.auth.AppUser;
 import com.max.loja.auth.AppUserRepository;
 import com.max.loja.catalog.ProductVariant;
+import com.max.loja.delivery.CourierRepository;
+import com.max.loja.delivery.DeliveryJob;
+import com.max.loja.delivery.DeliveryJobRepository;
+import com.max.loja.delivery.JobStatus;
 import com.max.loja.catalog.ProductVariantRepository;
 import com.max.loja.catalog.StockMovement;
 import com.max.loja.catalog.StockService;
 import com.max.loja.event.StoreEvents;
 import com.max.loja.media.ProductPhoto;
 import com.max.loja.media.ProductPhotoRepository;
+import com.max.loja.order.OrderDtos.CourierInfo;
 import com.max.loja.order.OrderDtos.CustomerInfo;
 import com.max.loja.order.OrderDtos.EventResponse;
 import com.max.loja.order.OrderDtos.ItemRequest;
@@ -61,13 +66,18 @@ public class OrderService {
     private final StoreService stores;
     private final StaffService staff;
     private final ProductPhotoRepository photos;
+    private final DeliveryJobRepository jobs;
+    private final CourierRepository couriers;
     private final ApplicationEventPublisher events;
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
 
     public OrderService(OrderRepository orders, ProductVariantRepository variants, AppUserRepository users,
                         StockService stock, PricingService pricing, StoreService stores, StaffService staff,
-                        ProductPhotoRepository photos, ApplicationEventPublisher events, Clock clock) {
+                        ProductPhotoRepository photos, DeliveryJobRepository jobs, CourierRepository couriers,
+                        ApplicationEventPublisher events, Clock clock) {
+        this.jobs = jobs;
+        this.couriers = couriers;
         this.orders = orders;
         this.variants = variants;
         this.users = users;
@@ -175,6 +185,15 @@ public class OrderService {
                 throw new BusinessException(quote.message());
             }
             fee = quote.fee();
+            if (store.isCourierDelivery()) {
+                if (req.paymentMethod() == PaymentMethod.CASH) {
+                    throw new BusinessException("Entrega por entregador só aceita pagamento antecipado (Pix ou cartão).");
+                }
+                order.setCourierDelivery(true);
+                order.setDeliveryLat(req.deliveryLat());
+                order.setDeliveryLng(req.deliveryLng());
+                order.setDeliveryDistanceKm(BigDecimal.valueOf(quote.distanceKm()));
+            }
         }
         order.setSubtotal(Money.round(subtotal));
         order.setDiscount(Money.round(saved));
@@ -251,6 +270,9 @@ public class OrderService {
         if (!from.next(order.getDeliveryMethod()).contains(to)) {
             throw new BusinessException("Não dá para passar de \"" + from.label() + "\" para \"" + to.label() + "\".");
         }
+        if (order.isCourierDelivery() && (to == OrderStatus.SHIPPED || to == OrderStatus.DELIVERED)) {
+            throw new BusinessException("Esta entrega é feita por um entregador da plataforma: ele confirma a coleta e a entrega.");
+        }
         if (to == OrderStatus.CANCELED) {
             cancel(order, note == null || note.isBlank() ? "Cancelado pela loja" : note.trim(), actorId, false);
         } else {
@@ -261,6 +283,23 @@ public class OrderService {
             events.publishEvent(new StoreEvents.OrderStatusChanged(order.getId(), from, to, false, actorId));
         }
         return response(order, true);
+    }
+
+    /**
+     * Passo dado pelo entregador (coleta → "saiu para entrega", entrega → "entregue"). Chamado dentro da transação do
+     * tenant do pedido, depois de travar o pedido.
+     */
+    public void courierStep(CustomerOrder order, OrderStatus to, Long courierUserId, String courierName) {
+        OrderStatus from = order.getStatus();
+        if (!from.next(order.getDeliveryMethod()).contains(to)) {
+            throw new BusinessException("Este pedido está \"" + from.label().toLowerCase() + "\" e não pode ir para \""
+                    + to.label().toLowerCase() + "\".");
+        }
+        LocalDateTime now = LocalDateTime.now(clock);
+        order.setStatus(to);
+        order.setUpdatedAt(now);
+        addEvent(order, to, "Entregador: " + courierName, courierUserId, now);
+        events.publishEvent(new StoreEvents.OrderStatusChanged(order.getId(), from, to, false, courierUserId));
     }
 
     @Transactional
@@ -297,6 +336,11 @@ public class OrderService {
         order.setUpdatedAt(now);
         addEvent(order, OrderStatus.CANCELED, reason, actorId, now);
         events.publishEvent(new StoreEvents.OrderStatusChanged(order.getId(), from, OrderStatus.CANCELED, byCustomer, actorId));
+    }
+
+    /** Pedido travado para alterar (mesma ordem de lock em todos os caminhos: pedido primeiro). */
+    public CustomerOrder lock(Long orderId) {
+        return orders.lock(orderId).orElseThrow(() -> new NotFoundException("Pedido não encontrado"));
     }
 
     @Transactional(readOnly = true)
@@ -346,11 +390,44 @@ public class OrderService {
         List<EventResponse> timeline = o.getEvents().stream().map(e -> new EventResponse(e.getStatus(), e.getStatus().label(),
                 e.getNote(), Objects.equals(e.getUserId(), customerId), e.getCreatedAt())).toList();
         return new OrderResponse(o.getId(), o.getCode(), o.getStatus(), o.getStatus().label(),
-                forTeam ? List.copyOf(new java.util.TreeSet<>(o.getStatus().next(o.getDeliveryMethod()))) : List.of(),
+                forTeam ? teamNext(o) : List.of(),
                 !forTeam && o.getStatus().customerCanCancel(), o.getDeliveryMethod(), o.getPaymentMethod(), o.isPaid(),
                 o.getAddress(), o.getNotes(), o.getSubtotal(), o.getDiscount(), o.getDeliveryFee(), o.getTotal(),
                 o.getCancelReason(), o.getCreatedAt(), o.getUpdatedAt(),
-                forTeam ? new CustomerInfo(customerId, c.getName(), c.getEmail(), c.getPhone()) : null, items, timeline);
+                forTeam ? new CustomerInfo(customerId, c.getName(), c.getEmail(), c.getPhone()) : null, items, timeline,
+                courierInfo(o, forTeam));
+    }
+
+    /** Próximos status da equipe; num pedido de entregador, coleta e entrega são dele (e depois de coletado não cancela). */
+    private List<OrderStatus> teamNext(CustomerOrder o) {
+        java.util.Set<OrderStatus> next = new java.util.TreeSet<>(o.getStatus().next(o.getDeliveryMethod()));
+        if (o.isCourierDelivery()) {
+            next.remove(OrderStatus.SHIPPED);
+            next.remove(OrderStatus.DELIVERED);
+            if (o.getStatus() == OrderStatus.SHIPPED) {
+                next.remove(OrderStatus.CANCELED);
+            }
+        }
+        return List.copyOf(next);
+    }
+
+    private CourierInfo courierInfo(CustomerOrder o, boolean forTeam) {
+        if (!o.isCourierDelivery()) {
+            return null;
+        }
+        DeliveryJob job = jobs.findByOrderId(o.getId()).orElse(null);
+        if (job == null) {
+            // ainda não abriu: falta o pagamento e/ou a confirmação da loja
+            String wait = !o.isPaid() ? "Aguardando o pagamento" : "Aguardando a loja confirmar";
+            return new CourierInfo("WAITING", wait, null, null, null, null, null, null, false);
+        }
+        var courier = job.getCourierId() == null ? null : couriers.findById(job.getCourierId()).orElse(null);
+        String name = courier == null ? null : users.findById(courier.getUserId()).map(AppUser::getName).orElse(null);
+        boolean shown = job.getStatus().active();
+        return new CourierInfo(job.getStatus().name(), job.getStatus().label(), shown || job.getStatus() == JobStatus.DELIVERED ? name : null,
+                shown ? courier.getPhone() : null, shown && courier != null ? courier.getVehicle().label() : null,
+                forTeam && shown ? job.getPickupCode() : null, !forTeam && job.getStatus().active() ? job.getDeliveryCode() : null,
+                job.getStatus() == JobStatus.OPEN ? job.getExpiresAt() : null, forTeam && job.getStatus() == JobStatus.EXPIRED);
     }
 
     private String cover(Long productId) {

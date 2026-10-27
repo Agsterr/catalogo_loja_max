@@ -23,7 +23,7 @@ public class Notification {
 
     public enum Type {
         // equipe
-        NEW_ORDER, ORDER_CANCELED, LOW_STOCK, OUT_OF_STOCK,
+        NEW_ORDER, ORDER_CANCELED, LOW_STOCK, OUT_OF_STOCK, DELIVERY_ASSIGNED, DELIVERY_DONE, DELIVERY_PROBLEM,
         // cliente
         ORDER_STATUS, ORDER_PAID, BACK_IN_STOCK
     }

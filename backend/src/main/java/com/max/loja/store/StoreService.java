@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.max.loja.delivery.DeliveryPricing;
 import com.max.loja.security.AuditService;
 import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.NotFoundException;
@@ -37,7 +38,7 @@ public class StoreService {
                                @Size(max = 80) String city, @Pattern(regexp = "^$|^[A-Za-z]{2}$") String state,
                                @DecimalMin("-90") @DecimalMax("90") Double latitude,
                                @DecimalMin("-180") @DecimalMax("180") Double longitude,
-                               @Valid List<DeliveryZones.Zone> deliveryZones) {
+                               @Valid List<DeliveryZones.Zone> deliveryZones, boolean courierDelivery) {
     }
 
     /** {@code status}: aberta/fechada agora (nulo sem horário informado); {@code hours}: linhas para mostrar. */
@@ -46,7 +47,7 @@ public class StoreService {
                                 BigDecimal freeDeliveryFrom, String logoUrl, String coverUrl,
                                 List<StoreHours.Day> openingHours, List<String> hours, StoreHours.Status status,
                                 String city, String state, Double latitude, Double longitude,
-                                List<DeliveryZones.Zone> deliveryZones) {
+                                List<DeliveryZones.Zone> deliveryZones, boolean courierDelivery) {
     }
 
     /** Cartão da busca de lojas no app do cliente; {@code distanceKm} só vem quando a busca mandou a posição. */
@@ -68,8 +69,11 @@ public class StoreService {
     private final AuditService audit;
     private final ObjectMapper json;
     private final Clock clock;
+    private final DeliveryPricing courierPricing;
 
-    public StoreService(StoreRepository stores, AuditService audit, ObjectMapper json, Clock clock) {
+    public StoreService(StoreRepository stores, AuditService audit, ObjectMapper json, Clock clock,
+                        DeliveryPricing courierPricing) {
+        this.courierPricing = courierPricing;
         this.stores = stores;
         this.audit = audit;
         this.json = json;
@@ -82,7 +86,7 @@ public class StoreService {
                 s.getPickupAddress(), s.isPickupEnabled(), s.isDeliveryEnabled(), s.getDeliveryFee(), s.getFreeDeliveryFrom(),
                 s.getLogoUrl(), s.getCoverUrl(), days, StoreHours.lines(days),
                 StoreHours.status(days, LocalDateTime.now(clock)), s.getCity(), s.getState(), s.getLatitude(), s.getLongitude(),
-                DeliveryZones.parse(s.getDeliveryZones(), json));
+                DeliveryZones.parse(s.getDeliveryZones(), json), s.isCourierDelivery());
     }
 
     private StoreCard card(Store s, Double lat, Double lng) {
@@ -94,6 +98,9 @@ public class StoreService {
     }
 
     public DeliveryQuote deliveryQuote(Store s, Double lat, Double lng, BigDecimal subtotal) {
+        if (s.isCourierDelivery() && s.getLatitude() != null && s.getLongitude() != null) {
+            return courierQuote(s, lat, lng);
+        }
         boolean free = s.getFreeDeliveryFrom() != null && subtotal.compareTo(s.getFreeDeliveryFrom()) >= 0;
         List<DeliveryZones.Zone> zones = DeliveryZones.parse(s.getDeliveryZones(), json);
         if (zones.isEmpty() || s.getLatitude() == null || s.getLongitude() == null) {
@@ -107,6 +114,19 @@ public class StoreService {
                 .map(z -> new DeliveryQuote(true, false, km, free ? BigDecimal.ZERO : z.fee(), null))
                 .orElseGet(() -> new DeliveryQuote(false, false, km, null, "Você está a " + km + " km: fora da área de entrega"
                         + " (até " + zones.get(zones.size() - 1).upToKm() + " km)."));
+    }
+
+    /** Entregador da plataforma: taxa pela distância (fórmula da plataforma); a loja não dá frete grátis nem faixas. */
+    private DeliveryQuote courierQuote(Store s, Double lat, Double lng) {
+        if (lat == null || lng == null || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+            return new DeliveryQuote(false, true, null, null, "Use sua localização para calcular a entrega.");
+        }
+        double km = Math.round(distanceKm(lat, lng, s.getLatitude(), s.getLongitude()) * 10) / 10.0;
+        if (!courierPricing.covers(km)) {
+            return new DeliveryQuote(false, false, km, null, "Você está a " + km + " km: fora da área de entrega (até "
+                    + courierPricing.maxKm() + " km).");
+        }
+        return new DeliveryQuote(true, false, km, courierPricing.customerFee(km), null);
     }
 
     /** Distância em linha reta (haversine), em km. */
@@ -159,6 +179,10 @@ public class StoreService {
             throw new BusinessException("Marque a localização da loja para cobrar entrega por distância");
         }
         s.setDeliveryZones(zones);
+        if (req.courierDelivery() && (req.latitude() == null || req.longitude() == null)) {
+            throw new BusinessException("Marque a localização da loja para usar entregador da plataforma");
+        }
+        s.setCourierDelivery(req.courierDelivery());
         s.setCity(blank(req.city()));
         s.setState(blank(req.state()) == null ? null : req.state().trim().toUpperCase());
         boolean hasPoint = req.latitude() != null && req.longitude() != null;

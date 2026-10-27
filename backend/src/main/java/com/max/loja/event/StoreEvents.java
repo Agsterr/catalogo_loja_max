@@ -37,4 +37,20 @@ public final class StoreEvents {
     /** Promoção começou (aviso aos clientes que aceitam promoções). */
     public record PromotionStarted(Long promotionId) {
     }
+
+    /** Um entregador aceitou a corrida do pedido. */
+    public record DeliveryAccepted(Long jobId) {
+    }
+
+    /** O entregador desistiu antes de coletar: a corrida voltou ao mural. */
+    public record DeliveryReopened(Long jobId) {
+    }
+
+    /** Ninguém aceitou a corrida a tempo. */
+    public record DeliveryExpired(Long jobId) {
+    }
+
+    /** Entregador concluiu a entrega. */
+    public record DeliveryDone(Long jobId) {
+    }
 }

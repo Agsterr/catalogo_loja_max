@@ -44,7 +44,21 @@ public class AccountDeletionService {
         if (user.getRole() == Role.OWNER || user.getRole() == Role.PLATFORM_ADMIN) {
             throw new BusinessException("Esta conta não pode ser excluída pelo app. Fale com o suporte.");
         }
-        jdbc.update("update orders set address = null, notes = null where customer_id = ?", userId);
+        if (user.getRole() == Role.COURIER) {
+            Integer active = jdbc.queryForObject(
+                    "select count(*) from delivery_job where courier_id = ? and status in ('ACCEPTED', 'PICKED_UP')", Integer.class, userId);
+            if (active != null && active > 0) {
+                throw new BusinessException("Conclua ou cancele suas corridas em andamento antes de excluir a conta.");
+            }
+            jdbc.update("""
+                    update courier set phone = '-', plate = null, base_lat = null, base_lng = null, last_lat = null,
+                    last_lng = null, online = false, status = 'BLOCKED', status_reason = 'Conta excluída' where user_id = ?""", userId);
+        }
+        jdbc.update("update orders set address = null, notes = null, delivery_lat = null, delivery_lng = null where customer_id = ?",
+                userId);
+        jdbc.update("""
+                update delivery_job set customer_name = 'Cliente', customer_phone = null, dropoff_address = '(removido)',
+                dropoff_lat = 0, dropoff_lng = 0 where order_id in (select id from orders where customer_id = ?)""", userId);
         jdbc.update("delete from notification where user_id = ?", userId);
         jdbc.update("delete from password_reset where user_id = ?", userId);
         jdbc.update("delete from customer_address where user_id = ?", userId);

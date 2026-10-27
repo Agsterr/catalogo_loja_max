@@ -66,6 +66,12 @@ public class CustomerOrder extends TenantEntity {
 
     private String cancelReason;
 
+    /** Entrega feita por entregador da plataforma: o servidor guarda onde entregar (para despachar) e a distância. */
+    private boolean courierDelivery;
+    private Double deliveryLat;
+    private Double deliveryLng;
+    private java.math.BigDecimal deliveryDistanceKm;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 

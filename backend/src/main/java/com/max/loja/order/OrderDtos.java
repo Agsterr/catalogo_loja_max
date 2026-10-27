@@ -46,7 +46,15 @@ public final class OrderDtos {
                                 String address, String notes, BigDecimal subtotal, BigDecimal discount,
                                 BigDecimal deliveryFee, BigDecimal total, String cancelReason, LocalDateTime createdAt,
                                 LocalDateTime updatedAt, CustomerInfo customer, List<ItemResponse> items,
-                                List<EventResponse> events) {
+                                List<EventResponse> events, CourierInfo courier) {
+    }
+
+    /**
+     * Entrega por entregador: situação da corrida. {@code pickupCode} só a equipe vê (o entregador digita ao coletar);
+     * {@code deliveryCode} só o cliente vê (o entregador digita ao entregar).
+     */
+    public record CourierInfo(String status, String statusLabel, String courierName, String courierPhone, String vehicle,
+                              String pickupCode, String deliveryCode, LocalDateTime expiresAt, boolean canRetry) {
     }
 
     public record OrderSummary(Long id, String code, OrderStatus status, String statusLabel, DeliveryMethod deliveryMethod,
