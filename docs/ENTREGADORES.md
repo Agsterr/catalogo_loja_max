@@ -37,8 +37,21 @@ plataforma" aparecem num mural por região; o primeiro que aceitar leva.
 - **Etapa 1**: cadastro/aprovação, mural por região, aceite/coleta/entrega com códigos, ganhos, app do entregador, painel
   nos apps da loja e do admin.
 - **Etapa 2 (esta)**: frete pago direto ao entregador, 5 grátis por aparelho/CPF, assinatura R$ 24,99 com confirmação do admin.
+- **Etapa 3 (esta)**: rastreio ao vivo, avaliação do entregador e bônus da loja (veja abaixo).
 - **Etapa 2b**: cobrança automática da assinatura (Pix com QR + webhook) — precisa de conta num provedor.
-- **Etapa 3**: rastreio ao vivo, avaliações do entregador, bônus quando ninguém aceita, assinatura das lojas (se houver).
+- **Depois**: cobrança automática, localização em segundo plano (serviço em primeiro plano), mapa dentro do app, bônus automático.
+
+## Rastreio, avaliação e bônus (etapa 3)
+- **Rastreio**: o app do entregador manda a posição a cada ~15 s enquanto a corrida está ativa e o app está aberto
+  (`POST /api/courier/jobs/{id}/location`). Só a **última** posição é guardada (sem histórico de trajeto) e some do alcance
+  quando a corrida acaba. A loja vê desde o aceite; o cliente, depois da coleta (`GET .../orders/{id}/tracking`), com distância e
+  previsão por linha reta (20 km/h, fator de rua 1,3) — é uma estimativa. "Ver no mapa" abre o mapa do aparelho (sem chave de mapas).
+  Limitação: sem permissão de localização em segundo plano, a posição só atualiza com o app aberto.
+- **Avaliação**: o cliente dá 1 a 5 estrelas, uma vez por pedido entregue (`POST .../orders/{id}/rate-courier`). A média aparece na
+  conta do entregador, no pedido (loja e cliente) e na lista do admin.
+- **Bônus**: quando ninguém aceita (ou para chamar mais rápido), a loja soma de R$ 0 a R$ 50 ao frete — **dinheiro da loja**, pago
+  direto ao entregador na coleta. Reabre a corrida, o push e o mural mostram o valor com bônus; numa corrida aberta só dá para
+  aumentar o bônus. Os ganhos do entregador somam frete + bônus.
 
 ## Pensando em escala
 - Módulo `delivery` isolado; `delivery_job` **não é por loja** (entregador vê corridas de várias lojas) e guarda um

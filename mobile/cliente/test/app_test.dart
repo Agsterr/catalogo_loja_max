@@ -165,6 +165,29 @@ void main() {
     expect(job.dropoffAddress, isNull);
   });
 
+  test('rastreio, bônus e avaliação do entregador', () {
+    final tr = Tracking.fromJson({
+      'active': true, 'status': 'PICKED_UP', 'statusLabel': 'Entregador a caminho do cliente', 'courierName': 'Zé',
+      'lat': -23.56, 'lng': -46.64, 'updatedAt': '2026-10-27T10:00:00', 'stale': false, 'distanceKm': 1.2, 'etaMinutes': 5, 'target': 'CLIENTE',
+    });
+    expect(tr.etaMinutes, 5);
+    expect(tr.target, 'CLIENTE');
+    expect(Tracking.fromJson({'active': false, 'status': 'ACCEPTED', 'statusLabel': 'x'}).lat, isNull);
+    final info = CourierInfo.fromJson({
+      'status': 'DELIVERED', 'statusLabel': 'Entregue', 'courierName': 'Zé', 'bonus': 5, 'courierRating': 4.8, 'courierRatings': 23,
+      'canRate': true, 'rated': false,
+    });
+    expect(info.canRate, isTrue);
+    expect(info.bonus, 5);
+    expect(info.courierRating, 4.8);
+    expect(info.tracking, isFalse);
+    expect(CourierInfo.fromJson({'status': 'ACCEPTED', 'statusLabel': 'x'}).tracking, isTrue);
+    final card = CourierJobCard.fromJson({
+      'id': 1, 'storeName': 'L', 'tripKm': 2, 'fee': 6, 'bonus': 4, 'itemCount': 1, 'expiresAt': '2026-10-27T10:30:00',
+    });
+    expect(card.fee + card.bonus, 10);
+  });
+
   test('cor do nome e horário da loja', () {
     expect(colorFor('Preto'), colorFor('preta'));
     expect(colorFor('Azul marinho'), isNot(colorFor('Rosa')));

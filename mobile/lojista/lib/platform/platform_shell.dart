@@ -352,6 +352,7 @@ class _CouriersTabState extends State<_CouriersTab> {
               '${c.city} - ${c.state}',
               c.phone,
               '${c.deliveredCount} entregas',
+              if (c.ratingAvg != null) '★ ${c.ratingAvg!.toStringAsFixed(1).replaceAll('.', ',')} (${c.ratingCount})',
               if (c.canceledCount > 0) '${c.canceledCount} desistências',
               if (c.statusReason != null) c.statusReason!,
             ].join(' · ')),

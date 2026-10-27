@@ -672,6 +672,11 @@ class CourierInfo {
     this.canRetry = false,
     this.freight,
     this.freightPayer,
+    this.bonus = 0,
+    this.courierRating,
+    this.courierRatings = 0,
+    this.canRate = false,
+    this.rated = false,
   });
 
   /// WAITING (falta pagar/confirmar), OPEN, ACCEPTED, PICKED_UP, DELIVERED, EXPIRED, CANCELED.
@@ -689,6 +694,20 @@ class CourierInfo {
   final double? freight;
   final String? freightPayer;
 
+  /// Bônus que a loja somou ao frete (pago ao entregador na coleta).
+  final double bonus;
+
+  /// Média de estrelas do entregador (nulo sem avaliações) e quantas.
+  final double? courierRating;
+  final int courierRatings;
+
+  /// O cliente ainda pode avaliar o entregador / já avaliou.
+  final bool canRate;
+  final bool rated;
+
+  /// Dá para acompanhar no mapa (corrida ativa).
+  bool get tracking => status == 'ACCEPTED' || status == 'PICKED_UP';
+
   factory CourierInfo.fromJson(Map<String, dynamic> j) => CourierInfo(
         status: j['status'] as String,
         statusLabel: j['statusLabel'] as String,
@@ -701,6 +720,51 @@ class CourierInfo {
         canRetry: j['canRetry'] as bool? ?? false,
         freight: _dn(j['freight']),
         freightPayer: j['freightPayer'] as String?,
+        bonus: _d(j['bonus']),
+        courierRating: _dn(j['courierRating']),
+        courierRatings: (j['courierRatings'] as num?)?.toInt() ?? 0,
+        canRate: j['canRate'] as bool? ?? false,
+        rated: j['rated'] as bool? ?? false,
+      );
+}
+
+/// Onde está o entregador agora (só durante a corrida). `target`: LOJA ou CLIENTE. A previsão é pela linha reta.
+class Tracking {
+  const Tracking({
+    required this.active,
+    required this.statusLabel,
+    this.courierName,
+    this.lat,
+    this.lng,
+    this.updatedAt,
+    this.stale = false,
+    this.distanceKm,
+    this.etaMinutes,
+    this.target,
+  });
+
+  final bool active;
+  final String statusLabel;
+  final String? courierName;
+  final double? lat;
+  final double? lng;
+  final DateTime? updatedAt;
+  final bool stale;
+  final double? distanceKm;
+  final int? etaMinutes;
+  final String? target;
+
+  factory Tracking.fromJson(Map<String, dynamic> j) => Tracking(
+        active: j['active'] as bool,
+        statusLabel: j['statusLabel'] as String,
+        courierName: j['courierName'] as String?,
+        lat: _dn(j['lat']),
+        lng: _dn(j['lng']),
+        updatedAt: j['updatedAt'] == null ? null : _dt(j['updatedAt']),
+        stale: j['stale'] as bool? ?? false,
+        distanceKm: _dn(j['distanceKm']),
+        etaMinutes: (j['etaMinutes'] as num?)?.toInt(),
+        target: j['target'] as String?,
       );
 }
 
@@ -913,6 +977,8 @@ class CourierProfile {
     required this.deliveredCount,
     required this.canceledCount,
     this.cpfMasked,
+    this.ratingAvg,
+    this.ratingCount = 0,
   });
 
   final int id;
@@ -937,6 +1003,10 @@ class CourierProfile {
   /// "***.456.789-**" (o CPF inteiro nunca volta para o app).
   final String? cpfMasked;
 
+  /// Média de estrelas que os clientes deram (nulo sem avaliações).
+  final double? ratingAvg;
+  final int ratingCount;
+
   bool get approved => status == 'APPROVED';
 
   factory CourierProfile.fromJson(Map<String, dynamic> j) => CourierProfile(
@@ -957,6 +1027,8 @@ class CourierProfile {
         deliveredCount: j['deliveredCount'] as int,
         canceledCount: j['canceledCount'] as int,
         cpfMasked: j['cpfMasked'] as String?,
+        ratingAvg: _dn(j['ratingAvg']),
+        ratingCount: (j['ratingCount'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -970,6 +1042,7 @@ class CourierJobCard {
     this.distanceToStoreKm,
     required this.tripKm,
     required this.fee,
+    this.bonus = 0,
     this.freightPayer = 'CUSTOMER',
     required this.itemCount,
     required this.expiresAt,
@@ -982,6 +1055,9 @@ class CourierJobCard {
   final double? distanceToStoreKm;
   final double tripKm;
   final double fee;
+
+  /// Bônus que a loja somou (pago direto ao entregador na coleta); o total da corrida é [fee] + [bonus].
+  final double bonus;
 
   /// Quem paga o frete direto ao entregador: CUSTOMER (na entrega) ou STORE (na coleta).
   final String freightPayer;
@@ -996,6 +1072,7 @@ class CourierJobCard {
         distanceToStoreKm: _dn(j['distanceToStoreKm']),
         tripKm: _d(j['tripKm']),
         fee: _d(j['fee']),
+        bonus: _d(j['bonus']),
         freightPayer: j['freightPayer'] as String? ?? 'CUSTOMER',
         itemCount: j['itemCount'] as int,
         expiresAt: _dt(j['expiresAt']),
@@ -1020,6 +1097,7 @@ class CourierJob {
     this.customerPhone,
     required this.tripKm,
     required this.fee,
+    this.bonus = 0,
     this.freightPayer = 'CUSTOMER',
     required this.itemCount,
     this.deliveredAt,
@@ -1042,6 +1120,7 @@ class CourierJob {
   final String? customerPhone;
   final double tripKm;
   final double fee;
+  final double bonus;
   final String freightPayer;
   final int itemCount;
   final DateTime? deliveredAt;
@@ -1065,6 +1144,7 @@ class CourierJob {
         customerPhone: j['customerPhone'] as String?,
         tripKm: _d(j['tripKm']),
         fee: _d(j['fee']),
+        bonus: _d(j['bonus']),
         freightPayer: j['freightPayer'] as String? ?? 'CUSTOMER',
         itemCount: j['itemCount'] as int,
         deliveredAt: j['deliveredAt'] == null ? null : _dt(j['deliveredAt']),
@@ -1110,6 +1190,8 @@ class AdminCourier {
     required this.online,
     required this.deliveredCount,
     required this.canceledCount,
+    this.ratingAvg,
+    this.ratingCount = 0,
   });
 
   final int id;
@@ -1125,6 +1207,8 @@ class AdminCourier {
   final bool online;
   final int deliveredCount;
   final int canceledCount;
+  final double? ratingAvg;
+  final int ratingCount;
 
   factory AdminCourier.fromJson(Map<String, dynamic> j) => AdminCourier(
         id: j['id'] as int,
@@ -1140,6 +1224,8 @@ class AdminCourier {
         online: j['online'] as bool,
         deliveredCount: j['deliveredCount'] as int,
         canceledCount: j['canceledCount'] as int,
+        ratingAvg: _dn(j['ratingAvg']),
+        ratingCount: (j['ratingCount'] as num?)?.toInt() ?? 0,
       );
 }
 

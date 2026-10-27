@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -119,9 +121,12 @@ class _OrderScreenState extends State<OrderScreen> {
           if (o.customer != null) _CustomerCard(customer: o.customer!, code: o.code, status: o.status),
           if (o.courier != null)
             _CourierCard(
+              api: widget.api,
               info: o.courier!,
               team: widget.team,
-              onRetry: () => _act(() => widget.api.post('/api/store/orders/${o.id}/courier/retry', {})),
+              path: _path,
+              orderId: o.id,
+              onChanged: _load,
             ),
           Card(
             child: Padding(
@@ -307,20 +312,113 @@ String statusMessage(String name, String code, OrderStatus status) {
 }
 
 
-/// Entrega por entregador da plataforma: situação da corrida e o código certo para cada lado
-/// (a loja vê o de coleta; o cliente, o de entrega).
-class _CourierCard extends StatelessWidget {
-  const _CourierCard({required this.info, required this.team, required this.onRetry});
+/// Entrega por entregador da plataforma: situação da corrida, o código certo para cada lado (a loja vê o de coleta; o cliente,
+/// o de entrega), o frete, onde o entregador está agora, o bônus (loja) e a avaliação (cliente).
+class _CourierCard extends StatefulWidget {
+  const _CourierCard({
+    required this.api,
+    required this.info,
+    required this.team,
+    required this.path,
+    required this.orderId,
+    required this.onChanged,
+  });
 
+  final ApiClient api;
   final CourierInfo info;
   final bool team;
-  final VoidCallback onRetry;
+
+  /// Caminho do pedido na API (`/api/store/orders/1` ou `/api/stores/slug/orders/1`).
+  final String path;
+  final int orderId;
+  final Future<void> Function() onChanged;
+
+  @override
+  State<_CourierCard> createState() => _CourierCardState();
+}
+
+class _CourierCardState extends State<_CourierCard> {
+  Tracking? _tracking;
+  Timer? _timer;
+  bool _busy = false;
+
+  CourierInfo get info => widget.info;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTracking();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CourierCard old) {
+    super.didUpdateWidget(old);
+    if (old.info.status != info.status) _syncTracking();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  /// Enquanto a corrida está ativa, atualiza a posição a cada 15 s (a tela fechada não consulta).
+  void _syncTracking() {
+    _timer?.cancel();
+    if (!info.tracking) {
+      _tracking = null;
+      return;
+    }
+    _loadTracking();
+    _timer = Timer.periodic(const Duration(seconds: 15), (_) => _loadTracking());
+  }
+
+  Future<void> _loadTracking() async {
+    try {
+      final j = await widget.api.get('${widget.path}/tracking') as Map<String, dynamic>;
+      if (mounted) setState(() => _tracking = Tracking.fromJson(j));
+    } catch (_) {
+      // sem sinal agora: mantém a última posição
+    }
+  }
+
+  Future<void> _retry() async {
+    final bonus = await showDialog<double>(context: context, builder: (_) => _BonusDialog(current: info.bonus, open: info.status == 'OPEN'));
+    if (bonus == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await widget.api.post('/api/store/orders/${widget.orderId}/courier/retry', {'bonus': bonus});
+      await widget.onChanged();
+      if (mounted) showInfo(context, 'Entregadores da região avisados de novo.');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _rate() async {
+    final result = await showDialog<({int stars, String comment})>(context: context, builder: (_) => const _RateDialog());
+    if (result == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await widget.api.post('${widget.path}/rate-courier', {'stars': result.stars, if (result.comment.isNotEmpty) 'comment': result.comment});
+      await widget.onChanged();
+      if (mounted) showInfo(context, 'Obrigado pela avaliação!');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
+    final team = widget.team;
     final code = team ? info.pickupCode : info.deliveryCode;
+    final tr = _tracking;
     return Card(
       color: scheme.secondaryContainer,
       child: Padding(
@@ -333,6 +431,7 @@ class _CourierCard extends StatelessWidget {
           ]),
           const SizedBox(height: 6),
           Text(info.statusLabel, style: t.bodyLarge?.copyWith(fontWeight: FontWeight.w700)),
+          if (tr != null && tr.active) _trackingLine(context, tr),
           if (info.freight != null)
             Padding(
               padding: const EdgeInsets.only(top: 2),
@@ -346,8 +445,12 @@ class _CourierCard extends StatelessWidget {
                           : 'Frete de ${money(info.freight!)}: pague ao entregador na entrega (dinheiro ou Pix).'),
                   style: t.bodySmall),
             ),
+          if (team && info.bonus > 0)
+            Text('Bônus de ${money(info.bonus)}: por sua conta, pago ao entregador na coleta.', style: t.bodySmall),
           if (info.courierName != null)
             Text([info.courierName!, ?info.vehicle].join(' · '), style: t.bodyMedium),
+          if (info.courierRating != null)
+            Text('★ ${info.courierRating!.toStringAsFixed(1).replaceAll('.', ',')} (${info.courierRatings} avaliações)', style: t.bodySmall),
           if (info.courierPhone != null)
             TextButton.icon(
               style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
@@ -377,12 +480,148 @@ class _CourierCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text('Os entregadores da região já foram avisados.', style: t.bodySmall),
           ],
-          if (team && info.canRetry) ...[
+          if (team && (info.canRetry || info.status == 'OPEN')) ...[
             const SizedBox(height: 8),
-            FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh_rounded), label: const Text('Chamar entregador de novo')),
+            FilledButton.icon(
+              onPressed: _busy ? null : _retry,
+              icon: const Icon(Icons.add_circle_outline_rounded),
+              label: Text(info.canRetry ? 'Chamar de novo (com bônus)' : 'Aumentar o bônus'),
+            ),
           ],
+          if (!team && info.canRate) ...[
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: _busy ? null : _rate,
+              icon: const Icon(Icons.star_rounded),
+              label: const Text('Avaliar o entregador'),
+            ),
+          ],
+          if (!team && info.rated) Text('Você avaliou este entregador. Obrigado!', style: t.bodySmall),
         ]),
       ),
     );
   }
+
+  Widget _trackingLine(BuildContext context, Tracking tr) {
+    final t = Theme.of(context).textTheme;
+    final where = tr.target == 'LOJA' ? 'da loja' : (widget.team ? 'do cliente' : 'de você');
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(children: [
+        Expanded(
+          child: Text(
+              tr.lat == null
+                  ? 'Aguardando a posição do entregador...'
+                  : [
+                      if (tr.distanceKm != null) 'A ${tr.distanceKm!.toStringAsFixed(1).replaceAll('.', ',')} km $where',
+                      if (tr.etaMinutes != null) 'chega em ~${tr.etaMinutes} min',
+                      if (tr.stale) '(posição antiga)',
+                    ].join(' · '),
+              style: t.bodyMedium),
+        ),
+        if (tr.lat != null)
+          TextButton(
+            onPressed: () => launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=${tr.lat},${tr.lng}'),
+                mode: LaunchMode.externalApplication),
+            child: const Text('Ver no mapa'),
+          ),
+      ]),
+    );
+  }
+}
+
+/// Bônus que a loja soma ao frete para um entregador aceitar mais rápido (pago por ela, direto ao entregador, na coleta).
+class _BonusDialog extends StatefulWidget {
+  const _BonusDialog({required this.current, required this.open});
+
+  final double current;
+
+  /// A corrida já está no mural: só dá para aumentar.
+  final bool open;
+
+  @override
+  State<_BonusDialog> createState() => _BonusDialogState();
+}
+
+class _BonusDialogState extends State<_BonusDialog> {
+  late double _bonus = widget.open ? widget.current + 2 : widget.current;
+  final _custom = TextEditingController();
+
+  @override
+  void dispose() {
+    _custom.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final options = [0.0, 3.0, 5.0, 10.0, 15.0].where((v) => !widget.open || v > widget.current).toList();
+    return AlertDialog(
+      title: Text(widget.open ? 'Aumentar o bônus' : 'Chamar entregador de novo'),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('O bônus é somado ao frete e você paga direto ao entregador, na coleta. Ele aparece no mural e no aviso.'),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, children: [
+          for (final v in options)
+            ChoiceChip(
+              label: Text(v == 0 ? 'Sem bônus' : money(v)),
+              selected: _bonus == v && _custom.text.isEmpty,
+              onSelected: (_) => setState(() {
+                _bonus = v;
+                _custom.clear();
+              }),
+            ),
+        ]),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _custom,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Outro valor (até R\$ 50)', prefixText: 'R\$ '),
+          onChanged: (v) => setState(() => _bonus = double.tryParse(v.replaceAll(',', '.')) ?? _bonus),
+        ),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Voltar')),
+        FilledButton(onPressed: () => Navigator.pop(context, _bonus), child: const Text('Chamar')),
+      ],
+    );
+  }
+}
+
+/// Estrelas (1 a 5) e um comentário opcional sobre o entregador.
+class _RateDialog extends StatefulWidget {
+  const _RateDialog();
+
+  @override
+  State<_RateDialog> createState() => _RateDialogState();
+}
+
+class _RateDialogState extends State<_RateDialog> {
+  int _stars = 5;
+  final _comment = TextEditingController();
+
+  @override
+  void dispose() {
+    _comment.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Como foi a entrega?'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            for (var i = 1; i <= 5; i++)
+              IconButton(
+                onPressed: () => setState(() => _stars = i),
+                icon: Icon(i <= _stars ? Icons.star_rounded : Icons.star_outline_rounded, size: 34, color: Colors.amber.shade700),
+              ),
+          ]),
+          TextField(controller: _comment, maxLength: 300, maxLines: 2, decoration: const InputDecoration(labelText: 'Comentário (opcional)')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Agora não')),
+          FilledButton(onPressed: () => Navigator.pop(context, (stars: _stars, comment: _comment.text.trim())), child: const Text('Enviar')),
+        ],
+      );
 }
