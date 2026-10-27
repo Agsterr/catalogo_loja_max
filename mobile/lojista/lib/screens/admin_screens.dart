@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:loja_core/loja_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -315,7 +316,7 @@ class _TeamScreenState extends State<TeamScreen> {
   }
 }
 
-/// Dados da loja (dono): nome, WhatsApp, retirada, entrega e frete.
+/// Dados da loja (dono): logo, capa, descrição, horário, WhatsApp, retirada, entrega e frete.
 class StoreSettingsScreen extends StatefulWidget {
   const StoreSettingsScreen({super.key, required this.api});
 
@@ -327,6 +328,7 @@ class StoreSettingsScreen extends StatefulWidget {
 
 class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
   final _name = TextEditingController();
+  final _description = TextEditingController();
   final _whatsapp = TextEditingController();
   final _instagram = TextEditingController();
   final _address = TextEditingController();
@@ -335,6 +337,16 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
   bool _pickup = true;
   bool _delivery = true;
   bool _loaded = false;
+  bool _busy = false;
+  String? _logoUrl;
+  String? _coverUrl;
+  String _slug = '';
+
+  /// Segunda a domingo; "" = fechado.
+  List<DayHours> _week = List.generate(7, (i) => i == 6 ? const DayHours('', '') : const DayHours('09:00', '18:00'));
+  bool _hoursSet = false;
+
+  static const _days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
   @override
   void initState() {
@@ -343,7 +355,9 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
       final s = StoreInfo.fromJson(j as Map<String, dynamic>);
       if (!mounted) return;
       setState(() {
+        _slug = s.slug;
         _name.text = s.name;
+        _description.text = s.description ?? '';
         _whatsapp.text = s.whatsapp ?? '';
         _instagram.text = s.instagram ?? '';
         _address.text = s.pickupAddress ?? '';
@@ -351,6 +365,12 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
         _free.text = s.freeDeliveryFrom?.toStringAsFixed(2).replaceAll('.', ',') ?? '';
         _pickup = s.pickupEnabled;
         _delivery = s.deliveryEnabled;
+        _logoUrl = s.logoUrl;
+        _coverUrl = s.coverUrl;
+        if (s.openingHours != null && s.openingHours!.length == 7) {
+          _week = s.openingHours!;
+          _hoursSet = true;
+        }
         _loaded = true;
       });
     }).catchError((Object e) {
@@ -360,7 +380,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _whatsapp, _instagram, _address, _fee, _free]) {
+    for (final c in [_name, _description, _whatsapp, _instagram, _address, _fee, _free]) {
       c.dispose();
     }
     super.dispose();
@@ -369,9 +389,11 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
   static double? _money(String s) => double.tryParse(s.trim().replaceAll('.', '').replaceAll(',', '.'));
 
   Future<void> _save() async {
+    setState(() => _busy = true);
     try {
       await widget.api.put('/api/store/settings', {
         'name': _name.text.trim(),
+        'description': _description.text.trim(),
         'whatsapp': _whatsapp.text.trim(),
         'instagram': _instagram.text.trim(),
         'pickupAddress': _address.text.trim(),
@@ -379,26 +401,158 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
         'deliveryEnabled': _delivery,
         'deliveryFee': _money(_fee.text) ?? 0,
         'freeDeliveryFrom': _free.text.trim().isEmpty ? null : _money(_free.text),
+        'openingHours': _hoursSet ? _week.map((d) => d.toJson()).toList() : null,
       });
       if (mounted) showInfo(context, 'Dados da loja salvos.');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// [kind]: 'logo' ou 'capa'.
+  Future<void> _pickImage(String kind) async {
+    final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 2400, maxHeight: 2400, imageQuality: 90);
+    if (file == null) return;
+    setState(() => _busy = true);
+    try {
+      final json = StoreInfo.fromJson(
+          await widget.api.upload('/api/store/settings/$kind', bytes: await file.readAsBytes(), filename: file.name) as Map<String, dynamic>);
+      if (mounted) {
+        setState(() {
+          _logoUrl = json.logoUrl;
+          _coverUrl = json.coverUrl;
+        });
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _removeImage(String kind) async {
+    try {
+      final json = StoreInfo.fromJson(await widget.api.delete('/api/store/settings/$kind') as Map<String, dynamic>);
+      if (mounted) {
+        setState(() {
+          _logoUrl = json.logoUrl;
+          _coverUrl = json.coverUrl;
+        });
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     }
   }
 
+  Future<void> _editDay(int i) async {
+    final d = _week[i];
+    TimeOfDay parse(String v, TimeOfDay fallback) {
+      final p = v.split(':');
+      return p.length == 2 ? TimeOfDay(hour: int.tryParse(p[0]) ?? fallback.hour, minute: int.tryParse(p[1]) ?? 0) : fallback;
+    }
+
+    String fmt(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    final open = await showTimePicker(
+        context: context, helpText: '${_days[i]}: abre às', initialTime: parse(d.open, const TimeOfDay(hour: 9, minute: 0)));
+    if (open == null || !mounted) return;
+    final close = await showTimePicker(
+        context: context, helpText: '${_days[i]}: fecha às', initialTime: parse(d.close, const TimeOfDay(hour: 18, minute: 0)));
+    if (close == null) return;
+    setState(() {
+      _week = [..._week]..[i] = DayHours(fmt(open), fmt(close));
+      _hoursSet = true;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Dados da loja')),
       body: !_loaded
           ? const Center(child: CircularProgressIndicator())
           : ListView(padding: const EdgeInsets.all(16), children: [
-              TextField(controller: _name, decoration: const InputDecoration(labelText: 'Nome da loja')),
+              Text('Sua vitrine', style: t.titleMedium),
+              const SizedBox(height: 8),
+              Stack(clipBehavior: Clip.none, children: [
+                SizedBox(
+                  height: 120,
+                  width: double.infinity,
+                  child: _coverUrl != null
+                      ? ProductImage(url: _coverUrl)
+                      : Container(
+                          decoration: BoxDecoration(
+                              gradient: const LinearGradient(colors: [AppTheme.brand, AppTheme.sale]), borderRadius: BorderRadius.circular(12)),
+                        ),
+                ),
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Row(children: [
+                    FilledButton.tonalIcon(
+                      onPressed: _busy ? null : () => _pickImage('capa'),
+                      icon: const Icon(Icons.image_rounded, size: 18),
+                      label: const Text('Capa'),
+                    ),
+                    if (_coverUrl != null) IconButton(onPressed: () => _removeImage('capa'), icon: const Icon(Icons.close_rounded)),
+                  ]),
+                ),
+                Positioned(left: 12, bottom: -28, child: StoreLogo(name: _name.text, url: _logoUrl, size: 64)),
+              ]),
+              const SizedBox(height: 36),
+              Row(children: [
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _pickImage('logo'),
+                  icon: const Icon(Icons.add_a_photo_rounded, size: 18),
+                  label: Text(_logoUrl == null ? 'Escolher logo' : 'Trocar logo'),
+                ),
+                if (_logoUrl != null) TextButton(onPressed: () => _removeImage('logo'), child: const Text('Remover')),
+              ]),
+              const SizedBox(height: 4),
+              Text('Endereço da loja: $_slug', style: t.bodySmall),
+              const SizedBox(height: 16),
+              TextField(controller: _name, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Nome da loja')),
               const SizedBox(height: 12),
+              TextField(
+                controller: _description,
+                maxLength: 500,
+                minLines: 1,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Sobre a loja (aparece na vitrine)'),
+              ),
               TextField(controller: _whatsapp, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'WhatsApp')),
               const SizedBox(height: 12),
               TextField(controller: _instagram, decoration: const InputDecoration(labelText: 'Instagram', prefixText: '@')),
-              const SizedBox(height: 12),
+              const SizedBox(height: 20),
+              Row(children: [
+                Expanded(child: Text('Horário de funcionamento', style: t.titleMedium)),
+                if (_hoursSet) TextButton(onPressed: () => setState(() => _hoursSet = false), child: const Text('Não informar')),
+              ]),
+              if (!_hoursSet)
+                OutlinedButton.icon(
+                  onPressed: () => setState(() => _hoursSet = true),
+                  icon: const Icon(Icons.schedule_rounded),
+                  label: const Text('Informar horário (mostra "Aberta agora")'),
+                )
+              else
+                for (var i = 0; i < 7; i++)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(_days[i]),
+                    subtitle: Text(_week[i].closed ? 'Fechado' : '${_week[i].open} às ${_week[i].close}'),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (!_week[i].closed)
+                        TextButton(
+                          onPressed: () => setState(() => _week = [..._week]..[i] = const DayHours('', '')),
+                          child: const Text('Fechar'),
+                        ),
+                      IconButton(onPressed: () => _editDay(i), icon: const Icon(Icons.edit_rounded, size: 20)),
+                    ]),
+                  ),
+              const Divider(height: 32),
               TextField(controller: _address, decoration: const InputDecoration(labelText: 'Endereço para retirada')),
               SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Retirada na loja'), value: _pickup, onChanged: (v) => setState(() => _pickup = v)),
               SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Entrega'), value: _delivery, onChanged: (v) => setState(() => _delivery = v)),
@@ -416,7 +570,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                 ),
               ],
               const SizedBox(height: 20),
-              FilledButton(onPressed: _save, child: const Text('Salvar')),
+              FilledButton(onPressed: _busy ? null : _save, child: const Text('Salvar')),
+              const SizedBox(height: 24),
             ]),
     );
   }

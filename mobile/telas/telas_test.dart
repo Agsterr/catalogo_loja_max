@@ -149,7 +149,7 @@ Map<String, dynamic> _summary(int id, String code, String status, String name, S
 Object? _route(String path) {
   if (path == '/api/public/stores') {
     return _page([
-      {'id': 1, 'slug': 'moda-da-ana', 'name': 'Moda da Ana', 'instagram': 'modadaana'},
+      {'id': 1, 'slug': 'moda-da-ana', 'name': 'Moda da Ana', 'instagram': 'modadaana', 'logoUrl': _photo('bolsa'), 'status': {'open': true, 'label': 'Aberta agora'}},
       {'id': 2, 'slug': 'pe-direito', 'name': 'Pé Direito Calçados', 'instagram': 'pedireito'},
       {'id': 3, 'slug': 'brilho-bijus', 'name': 'Brilho Bijus', 'instagram': 'brilhobijus'},
       {'id': 4, 'slug': 'casa-da-moda', 'name': 'Casa da Moda', 'instagram': null},
@@ -160,6 +160,10 @@ Object? _route(String path) {
       'id': 1, 'slug': 'moda-da-ana', 'name': 'Moda da Ana', 'whatsapp': '11999990000', 'instagram': 'modadaana',
       'pickupAddress': 'Rua das Flores, 120 - Centro', 'pickupEnabled': true, 'deliveryEnabled': true,
       'deliveryFee': 12, 'freeDeliveryFrom': 250,
+      'description': 'Moda feminina com carinho: vestidos, jaquetas e acessórios.',
+      'logoUrl': _photo('bolsa'), 'coverUrl': _photo('vestido'),
+      'hours': ['Seg a Sex: 09:00–18:00', 'Sáb: 09:00–13:00'],
+      'status': {'open': true, 'label': 'Aberta até 18:00'},
     };
   }
   if (path.endsWith('/categories')) {
@@ -400,6 +404,7 @@ Future<void> _shot(WidgetTester tester, String name) async {
 void main() {
   setUpAll(() async {
     HttpOverrides.global = _Images();
+    networkImageWithoutCache = true;
     await initializeDateFormatting('pt_BR');
     await _loadFonts();
   });

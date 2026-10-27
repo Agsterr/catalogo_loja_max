@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:loja_core/loja_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Item do carrinho. Nome, preço e foto são só para mostrar: o preço que vale é o que o servidor calcula no pedido.
@@ -20,10 +21,10 @@ class CartItem {
   final int productId;
   final String name;
   final String variant;
-  final double unitPrice;
+  double unitPrice;
   int quantity;
   final String? thumbUrl;
-  final int maxStock;
+  int maxStock;
 
   double get total => unitPrice * quantity;
 
@@ -103,6 +104,36 @@ class Cart extends ChangeNotifier {
     }
     _changed();
   }
+
+  /// Aplica o que a loja respondeu na conferência do carrinho: tira o que saiu de venda, reduz ao estoque e atualiza o
+  /// preço de agora. Devolve o que mudou, em frases, para avisar a pessoa antes de fechar.
+  List<String> applyQuote(List<QuoteLine> lines) {
+    final notes = <String>[];
+    for (final line in lines) {
+      final item = _items.where((i) => i.variantId == line.variantId).firstOrNull;
+      if (item == null) continue;
+      if (!line.available || line.stock == 0) {
+        _items.remove(item);
+        notes.add('${item.name} (${item.variant}) saiu de venda ou esgotou e foi tirado do carrinho.');
+        continue;
+      }
+      if (line.quantity < item.quantity) {
+        notes.add('${item.name} (${item.variant}): só restam ${line.stock}.');
+        item.quantity = line.quantity;
+      }
+      item.maxStock = line.stock;
+      final price = line.unitPrice;
+      if (price != null && (price - item.unitPrice).abs() > 0.004) {
+        notes.add('${item.name}: o preço mudou de ${_money(item.unitPrice)} para ${_money(price)}.');
+        item.unitPrice = price;
+      }
+    }
+    if (_items.isEmpty) storeSlug = null;
+    if (notes.isNotEmpty || lines.isNotEmpty) _changed();
+    return notes;
+  }
+
+  static String _money(double v) => 'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
 
   void setQuantity(int variantId, int quantity) {
     final item = _items.where((i) => i.variantId == variantId).firstOrNull;

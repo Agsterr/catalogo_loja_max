@@ -38,7 +38,11 @@ class _StoreShellState extends State<StoreShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refresh();
+    if (state == AppLifecycleState.resumed) {
+      // o app aberto em segundo plano por dias não desloga: renova o token ao voltar
+      AppScope.of(context).session.refreshIfDue();
+      _refresh();
+    }
   }
 
   Future<void> _refresh() async {

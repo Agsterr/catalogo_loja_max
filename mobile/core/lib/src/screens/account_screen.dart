@@ -33,9 +33,24 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   void initState() {
     super.initState();
+    _loadPromoPreference();
     widget.loadStore?.call().then((s) {
       if (mounted) setState(() => _store = s);
     }).catchError((Object _) {});
+  }
+
+  /// A chave de promoções mostra o que a pessoa escolheu antes (guardado no servidor, por celular).
+  Future<void> _loadPromoPreference() async {
+    final session = widget.session;
+    if (!Push.configured || !session.signedIn || (session.user?.isTeam ?? false)) return;
+    try {
+      final token = await session.pushToken;
+      if (token == null) return;
+      final json = await session.api.get('/api/me/push-preferences?token=${Uri.encodeQueryComponent(token)}') as Map<String, dynamic>;
+      if (mounted) setState(() => _promos = json['promoNotifications'] as bool);
+    } catch (_) {
+      // sem rede: fica no padrão (ligado)
+    }
   }
 
   Future<void> _editProfile() async {

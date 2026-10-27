@@ -103,12 +103,13 @@ class _StorePickerScreenState extends State<StorePickerScreen> {
               empty: const EmptyState(icon: Icons.storefront_outlined, text: 'Nenhuma loja encontrada.'),
               itemBuilder: (context, s) => Card(
                 child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                    child: Text(s.name.isEmpty ? '?' : s.name[0].toUpperCase()),
-                  ),
+                  leading: StoreLogo(name: s.name, url: s.logoUrl),
                   title: Text(s.name),
-                  subtitle: s.instagram == null ? null : Text('@${s.instagram!.replaceAll('@', '')}'),
+                  subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    if (s.description != null) Text(s.description!, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    OpenBadge(s.status),
+                    if (s.description == null && s.status == null && s.instagram != null) Text('@${s.instagram!.replaceAll('@', '')}'),
+                  ]),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => scope.store.open(s),
                 ),

@@ -45,6 +45,7 @@ class Session extends ChangeNotifier {
     } else {
       try {
         await _authenticate(api.post('/api/me/token'), notify: false);
+        _lastRefresh = DateTime.now();
       } on AccountBlockedException {
         return; // _blocked já trocou o estado e limpou a sessão
       } on ApiException catch (e) {
@@ -57,6 +58,22 @@ class Session extends ChangeNotifier {
 
   /// Com a verificação em duas etapas ligada, a primeira tentativa sem [code] lança [ApiException] com
   /// `code == 'TOTP_REQUIRED'` (a tela então pede o código do autenticador).
+  DateTime? _lastRefresh;
+
+  /// Renova o token (sessão de 24h deslizante). Chamado ao voltar para o app: quem deixa o app aberto em segundo
+  /// plano por mais de um dia não é deslogado. Sem rede ou sem login, não faz nada.
+  Future<void> refreshIfDue() async {
+    if (state != SessionState.signedIn) return;
+    final last = _lastRefresh;
+    if (last != null && DateTime.now().difference(last) < const Duration(hours: 1)) return;
+    try {
+      await _authenticate(api.post('/api/me/token'), notify: false);
+      _lastRefresh = DateTime.now();
+    } on ApiException {
+      // sem rede: tenta de novo na próxima vez; 401/bloqueio já derrubam a sessão pelo ApiClient
+    }
+  }
+
   Future<void> login(String email, String password, {String? code}) async {
     await _authenticate(api.post('/api/auth/login', {
       'email': email.trim(),

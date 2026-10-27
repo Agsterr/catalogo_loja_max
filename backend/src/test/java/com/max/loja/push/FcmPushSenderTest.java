@@ -84,6 +84,22 @@ class FcmPushSenderTest {
     }
 
     @Test
+    void newOrdersForTheTeamUseTheLoudChannelAndPromotionsTheirOwn() throws Exception {
+        FcmPushSender fcm = sender(true);
+        fcm.send("cel-3", "Novo pedido #ABC123", "Ana · 2 itens", Map.of("type", "team", "kind", "NEW_ORDER", "orderId", "1"));
+        fcm.send("cel-3", "Promoção", "30% off", Map.of("type", "promotion", "promotionId", "7"));
+        String[] channels = bodies.stream().map(req -> {
+            try {
+                return json.readTree(req.substring(req.indexOf('{'))).path("message").path("android").path("notification")
+                        .path("channel_id").asText();
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }).toArray(String[]::new);
+        assertThat(channels).containsExactly("novos_pedidos", "promocoes");
+    }
+
+    @Test
     void orderNoticesGoToTheOrdersChannel() throws Exception {
         assertThat(sender(true).send("cel-2", "Novo pedido #ABC123", "Ana · 2 itens", Map.of("type", "team", "orderId", "1")))
                 .isEqualTo(PushSender.Result.SENT);

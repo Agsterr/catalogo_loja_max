@@ -33,6 +33,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   String _sort = '';
   List<Category> _categories = const [];
   List<Promotion> _promotions = const [];
+  StoreInfo? _info;
 
   final _items = <ProductCard>[];
   int _page = 0;
@@ -63,8 +64,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
     try {
       final cats = await widget.api.get('${widget.base}/categories') as List;
       final promos = await widget.api.get('${widget.base}/promotions') as List;
+      final info = StoreInfo.fromJson(await widget.api.get(widget.base) as Map<String, dynamic>);
       if (!mounted) return;
       setState(() {
+        _info = info;
         _categories = cats.map((c) => Category.fromJson(c as Map<String, dynamic>)).toList();
         _promotions = promos.map((p) => Promotion.fromJson(p as Map<String, dynamic>)).toList();
       });
@@ -175,6 +178,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           await _reload();
         },
         child: CustomScrollView(controller: _scroll, slivers: [
+          if (_info != null) SliverToBoxAdapter(child: _StoreHeader(info: _info!)),
           if (_promotions.isNotEmpty)
             SliverToBoxAdapter(
               child: SizedBox(
@@ -319,5 +323,63 @@ class _PromoBanner extends StatelessWidget {
         ]),
       ),
     );
+  }
+}
+
+/// Capa, logo, descrição, "aberta agora" e horários da loja (os horários abrem ao tocar).
+class _StoreHeader extends StatelessWidget {
+  const _StoreHeader({required this.info});
+
+  final StoreInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      if (info.coverUrl != null)
+        SizedBox(height: 120, width: double.infinity, child: ProductImage(url: info.coverUrl, radius: 0))
+      else
+        Container(
+          height: 56,
+          decoration: const BoxDecoration(gradient: LinearGradient(colors: [AppTheme.brand, AppTheme.sale])),
+        ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          StoreLogo(name: info.name, url: info.logoUrl, size: 52),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(info.name, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              OpenBadge(info.status),
+              if (info.description != null)
+                Padding(padding: const EdgeInsets.only(top: 4), child: Text(info.description!, style: t.bodySmall)),
+            ]),
+          ),
+          if (info.hours.isNotEmpty)
+            IconButton(
+              tooltip: 'Horários',
+              icon: Icon(Icons.schedule_rounded, color: scheme.primary),
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                showDragHandle: true,
+                builder: (_) => Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+                  child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Horário de funcionamento', style: t.titleMedium),
+                    const SizedBox(height: 12),
+                    for (final line in info.hours) Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Text(line)),
+                    if (info.pickupAddress != null) ...[
+                      const SizedBox(height: 12),
+                      Text('Retirada: ${info.pickupAddress}', style: t.bodySmall),
+                    ],
+                  ]),
+                ),
+              ),
+            ),
+        ]),
+      ),
+    ]);
   }
 }

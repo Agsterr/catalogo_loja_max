@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Loja Max</title>
+<link rel="stylesheet" href="/_base.css">
+</head>
+<body>
+<header><div class="wrap"><a href="/">Loja Max</a></div></header>
+<main>
+<h1>Abrir no app Loja Max</h1>
+<p>Esse produto está na vitrine de uma loja da Loja Max. Se o app não abrir sozinho, toque no botão.</p>
+<p><a id="abrir" class="card" style="display:inline-block;font-weight:700;text-decoration:none" href="#">Abrir no app</a></p>
+<p class="muted">Ainda não tem o app? Peça o link de instalação para a loja.</p>
+</main>
+<footer><a href="/privacidade">Privacidade</a><a href="/termos">Termos de uso</a><a href="/excluir-conta">Excluir conta</a></footer>
+<script>
+// /l/<loja>/p/<produto>  →  lojamax://loja/<loja>/produto/<produto> (só letras, números e hífen)
+var m = location.pathname.match(/^\/l\/([a-z0-9-]{3,60})\/p\/(\d+)\/?$/);
+var a = document.getElementById('abrir');
+if (m) {
+  var link = 'lojamax://loja/' + m[1] + '/produto/' + m[2];
+  a.href = link;
+  setTimeout(function () { location.href = link; }, 300);
+} else {
+  a.style.display = 'none';
+}
+</script>
+</body>
+</html>

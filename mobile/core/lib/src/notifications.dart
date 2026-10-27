@@ -12,6 +12,16 @@ class Channels {
     importance: Importance.high,
   );
 
+  /// Pedido novo para a loja: toca e vibra até alguém ver (como nos apps de delivery), para não perder venda.
+  static final newOrders = AndroidNotificationChannel(
+    'novos_pedidos',
+    'Novos pedidos',
+    description: 'Alerta forte quando chega um pedido novo',
+    importance: Importance.max,
+    enableVibration: true,
+    vibrationPattern: Int64List.fromList([0, 600, 300, 600, 300, 600]),
+  );
+
   static const promotions = AndroidNotificationChannel(
     'promocoes',
     'Promoções',
@@ -52,6 +62,7 @@ class LocalNotifications {
       final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       await android?.createNotificationChannel(Channels.orders);
       await android?.createNotificationChannel(Channels.promotions);
+      await android?.createNotificationChannel(Channels.newOrders);
       final launch = await _plugin.getNotificationAppLaunchDetails();
       if (launch?.didNotificationLaunchApp ?? false) tapped.value = launch!.notificationResponse?.payload;
       _ready = true;
@@ -91,10 +102,12 @@ class LocalNotifications {
             channel.id,
             channel.name,
             channelDescription: channel.description,
-            importance: Importance.high,
-            priority: Priority.high,
+            importance: channel.importance,
+            priority: channel.importance == Importance.max ? Priority.max : Priority.high,
+            // FLAG_INSISTENT (4): o som repete até a pessoa abrir ou dispensar (só no canal de pedido novo)
+            additionalFlags: channel.id == 'novos_pedidos' ? Int32List.fromList([4]) : null,
           ),
-          iOS: const DarwinNotificationDetails(),
+          iOS: const DarwinNotificationDetails(interruptionLevel: InterruptionLevel.timeSensitive),
         ),
         payload: payload,
       );

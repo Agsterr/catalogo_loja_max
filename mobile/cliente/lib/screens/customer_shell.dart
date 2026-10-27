@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:loja_core/loja_core.dart';
 
@@ -20,6 +23,8 @@ class _CustomerShellState extends State<CustomerShell> with WidgetsBindingObserv
   int _tab = 0;
   int _unread = 0;
   final _inbox = GlobalKey<NotificationsScreenState>();
+  final _cartScreen = GlobalKey<CartScreenState>();
+  StreamSubscription<Uri>? _links;
 
   @override
   void initState() {
@@ -27,10 +32,35 @@ class _CustomerShellState extends State<CustomerShell> with WidgetsBindingObserv
     WidgetsBinding.instance.addObserver(this);
     LocalNotifications.instance.tapped.addListener(_onTapped);
     WidgetsBinding.instance.addPostFrameCallback((_) => _onTapped());
+    _listenLinks();
+  }
+
+  /// Link de produto compartilhado (`lojamax://loja/SLUG/produto/ID`): abre a loja e a peça.
+  Future<void> _listenLinks() async {
+    try {
+      final links = AppLinks();
+      final first = await links.getInitialLink();
+      if (first != null) _openLink(first);
+      _links = links.uriLinkStream.listen(_openLink);
+    } catch (_) {
+      // plataforma sem suporte a links (testes): o app funciona normal
+    }
+  }
+
+  void _openLink(Uri uri) {
+    final seg = uri.pathSegments;
+    if (uri.scheme != 'lojamax' || seg.length < 3 || seg[1] != 'produto') return;
+    final slug = seg[0];
+    final id = int.tryParse(seg[2]);
+    if (id == null || !RegExp(r'^[a-z0-9-]{3,60}$').hasMatch(slug) || !mounted) return;
+    final scope = AppScope.of(context);
+    if (scope.store.slug != slug && !scope.store.fixed) scope.store.open(StoreCard(slug: slug, name: ''));
+    Navigator.push(context, MaterialPageRoute(builder: (_) => ProductScreen(api: scope.session.api, slug: slug, productId: id)));
   }
 
   @override
   void dispose() {
+    _links?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     LocalNotifications.instance.tapped.removeListener(_onTapped);
     super.dispose();
@@ -38,7 +68,11 @@ class _CustomerShellState extends State<CustomerShell> with WidgetsBindingObserv
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _checkAlerts();
+    if (state == AppLifecycleState.resumed) {
+      // quem deixa o app em segundo plano por dias não é deslogado: o token é renovado ao voltar
+      AppScope.of(context).session.refreshIfDue();
+      _checkAlerts();
+    }
   }
 
   /// App aberto: confere o sino (e mostra aviso local do que for novo, quando não há push).
@@ -124,7 +158,7 @@ class _CustomerShellState extends State<CustomerShell> with WidgetsBindingObserv
         storeName: store.name,
         onSwitchStore: scope.store.fixed ? null : scope.store.leave,
       ),
-      const CartScreen(),
+      CartScreen(key: _cartScreen),
       session.signedIn
           ? OrdersScreen(key: ValueKey('pedidos-${store.slug}'), api: session.api, slug: store.slug)
           : needsLogin('Entre para ver seus pedidos.'),
@@ -146,6 +180,7 @@ class _CustomerShellState extends State<CustomerShell> with WidgetsBindingObserv
           selectedIndex: _tab,
           onDestinationSelected: (i) {
             setState(() => _tab = i);
+            if (i == 1) _cartScreen.currentState?.refresh();
             if (i == 3) _inbox.currentState?.refresh();
           },
           destinations: [

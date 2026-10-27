@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import 'api_client.dart';
@@ -61,7 +62,8 @@ class EmptyState extends StatelessWidget {
       );
 }
 
-/// Foto do produto (R2) com fundo neutro enquanto carrega ou quando não tem.
+/// Foto do produto (R2), guardada em disco: a vitrine abre mais rápido e gasta menos internet. Fundo neutro
+/// enquanto carrega ou quando não tem.
 class ProductImage extends StatelessWidget {
   const ProductImage({super.key, this.url, this.fit = BoxFit.cover, this.radius = 12});
 
@@ -81,10 +83,27 @@ class ProductImage extends StatelessWidget {
       borderRadius: BorderRadius.circular(radius),
       child: url == null
           ? placeholder
-          : Image.network(url!, fit: fit, errorBuilder: (_, _, _) => placeholder,
-              loadingBuilder: (context, child, progress) => progress == null ? child : placeholder),
+          : networkImage(url!, fit: fit, placeholder: placeholder),
     );
   }
+}
+
+/// Foto da internet com cache em disco. Os testes que desenham telas (`mobile/telas`) trocam por [Image.network],
+/// porque o cache precisa de plugins que não existem no `flutter test`.
+@visibleForTesting
+bool networkImageWithoutCache = false;
+
+Widget networkImage(String url, {BoxFit fit = BoxFit.cover, Widget? placeholder}) {
+  if (networkImageWithoutCache) {
+    return Image.network(url, fit: fit, errorBuilder: (_, _, _) => placeholder ?? const SizedBox.shrink());
+  }
+  return CachedNetworkImage(
+    imageUrl: url,
+    fit: fit,
+    fadeInDuration: const Duration(milliseconds: 120),
+    placeholder: placeholder == null ? null : (_, _) => placeholder,
+    errorWidget: (_, _, _) => placeholder ?? const SizedBox.shrink(),
+  );
 }
 
 /// Preço com "de/por" quando está em promoção.
@@ -237,10 +256,13 @@ Future<bool> confirm(BuildContext context, String title, String message, {String
 
 /// Cartão do produto na grade (vitrine e gestão).
 class ProductTile extends StatelessWidget {
-  const ProductTile({super.key, required this.product, required this.onTap, this.showStock = false});
+  const ProductTile({super.key, required this.product, required this.onTap, this.onLongPress, this.showStock = false});
 
   final ProductCard product;
   final VoidCallback onTap;
+
+  /// Segurar o produto (gestão: ajuste rápido de estoque).
+  final VoidCallback? onLongPress;
   final bool showStock;
 
   @override
@@ -248,6 +270,7 @@ class ProductTile extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(
@@ -326,6 +349,114 @@ class OrderTile extends StatelessWidget {
             ),
             const Icon(Icons.chevron_right_rounded),
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Selo "Aberta agora" / "Fechada" da loja.
+class OpenBadge extends StatelessWidget {
+  const OpenBadge(this.status, {super.key});
+
+  final OpenStatus? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = status;
+    if (s == null) return const SizedBox.shrink();
+    final color = s.open ? const Color(0xFF1B7F3B) : Theme.of(context).colorScheme.outline;
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.circle, size: 9, color: color),
+      const SizedBox(width: 5),
+      Flexible(
+        child: Text(s.label,
+            maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color, fontWeight: FontWeight.w600)),
+      ),
+    ]);
+  }
+}
+
+/// Logo da loja (ou a inicial do nome).
+class StoreLogo extends StatelessWidget {
+  const StoreLogo({super.key, required this.name, this.url, this.size = 44});
+
+  final String name;
+  final String? url;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: url != null
+          ? ClipOval(child: networkImage(url!, fit: BoxFit.cover, placeholder: _initial(scheme)))
+          : _initial(scheme),
+    );
+  }
+
+  Widget _initial(ColorScheme scheme) => CircleAvatar(
+        backgroundColor: scheme.primaryContainer,
+        child: Text(name.isEmpty ? '?' : name[0].toUpperCase(),
+            style: TextStyle(color: scheme.onPrimaryContainer, fontWeight: FontWeight.w700, fontSize: size * 0.4)),
+      );
+}
+
+/// Cor da bolinha para o nome da cor cadastrada pela loja ("Rosa", "Azul marinho"...). Nome desconhecido ganha uma
+/// cor estável derivada do texto (a bolinha sempre aparece; o nome vai escrito ao lado).
+Color colorFor(String name) {
+  final n = name.toLowerCase();
+  const known = {
+    'preto': 0xFF1B1B1B, 'branco': 0xFFFAFAFA, 'off white': 0xFFF3EFE6, 'cinza': 0xFF9E9E9E, 'chumbo': 0xFF4A4F55,
+    'vermelho': 0xFFD7263D, 'vinho': 0xFF6D1530, 'bordô': 0xFF6D1530, 'rosa': 0xFFF08FB0, 'pink': 0xFFE5267A,
+    'nude': 0xFFE3BFA5, 'laranja': 0xFFF28C28, 'amarelo': 0xFFF5D547, 'mostarda': 0xFFD9A521, 'verde': 0xFF3A9D5D,
+    'militar': 0xFF5B6B3C, 'azul': 0xFF2F6FDE, 'marinho': 0xFF1B2A5A, 'jeans': 0xFF4F6D9A, 'roxo': 0xFF7B3FA3,
+    'lilás': 0xFFB69AE0, 'marrom': 0xFF7B4A2B, 'caramelo': 0xFFB5733A, 'bege': 0xFFD8C3A0, 'dourado': 0xFFD4AF37,
+    'prata': 0xFFC0C0C0, 'prateado': 0xFFC0C0C0, 'vermelha': 0xFFD7263D, 'preta': 0xFF1B1B1B, 'branca': 0xFFFAFAFA,
+  };
+  for (final e in known.entries) {
+    if (n.contains(e.key)) return Color(e.value);
+  }
+  var hash = 0;
+  for (final u in n.codeUnits) {
+    hash = (hash * 31 + u) & 0xffffff;
+  }
+  return HSLColor.fromAHSL(1, (hash % 360).toDouble(), 0.45, 0.55).toColor();
+}
+
+/// Bolinha de cor selecionável.
+class ColorDot extends StatelessWidget {
+  const ColorDot({super.key, required this.name, required this.selected, required this.onTap, this.dimmed = false});
+
+  final String name;
+  final bool selected;
+  final VoidCallback? onTap;
+  final bool dimmed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: name,
+      child: InkResponse(
+        onTap: onTap,
+        radius: 26,
+        child: Opacity(
+          opacity: dimmed ? 0.35 : 1,
+          child: Container(
+            width: 40,
+            height: 40,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: selected ? scheme.primary : scheme.outlineVariant, width: selected ? 2.5 : 1),
+            ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(shape: BoxShape.circle, color: colorFor(name), border: Border.all(color: scheme.outlineVariant, width: 0.5)),
+            ),
+          ),
         ),
       ),
     );

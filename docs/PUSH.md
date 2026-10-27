@@ -20,7 +20,8 @@ celular passa a **seguir** aquela loja (recebe as promoções dela, com ou sem l
 conta). Ao sair, `POST /api/me/push-token/remove`. Promoções podem ser desligadas em *Conta*
 (`PUT /api/me/push-preferences`). O aviso leva o endereço da loja (`slug`), e o app abre o pedido/produto na loja certa.
 
-Canais do Android: `pedidos` (pedidos e estoque) e `promocoes` (promoções e "chegou!").
+Canais do Android: `novos_pedidos` (novo pedido para a equipe: importância máxima, vibração e toque insistente), `pedidos` (demais
+pedidos e estoque) e `promocoes` (promoções e "chegou!").
 
 ## Configurar uma vez
 1. https://console.firebase.google.com → **Criar projeto**.

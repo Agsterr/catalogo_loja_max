@@ -4,8 +4,40 @@ import 'package:loja_core/loja_core.dart';
 import '../app_scope.dart';
 import '../cart.dart';
 
-class CartScreen extends StatelessWidget {
+class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
+
+  @override
+  State<CartScreen> createState() => CartScreenState();
+}
+
+class CartScreenState extends State<CartScreen> {
+  /// O que mudou na última conferência com a loja (preço, estoque, peça que saiu de venda).
+  List<String> _notes = const [];
+
+  /// Confere o carrinho com a loja: o preço mostrado pode ser de quando a peça entrou (a promoção acabou, o estoque mudou).
+  /// Chamado ao abrir a aba do carrinho e antes de fechar o pedido.
+  Future<void> refresh() async {
+    final scope = AppScope.of(context);
+    final cart = scope.cart;
+    final slug = cart.storeSlug;
+    if (cart.isEmpty || slug == null) return;
+    try {
+      final json = await scope.session.api.post('/api/public/stores/$slug/cart/quote', {
+        'items': [for (final i in cart.items) {'variantId': i.variantId, 'quantity': i.quantity}],
+      }) as Map<String, dynamic>;
+      final notes = cart.applyQuote((json['items'] as List).map((l) => QuoteLine.fromJson(l as Map<String, dynamic>)).toList());
+      if (mounted) setState(() => _notes = notes);
+    } catch (_) {
+      // sem rede: segue com o que está no carrinho; a loja confere de novo ao fechar o pedido
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => refresh());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,11 +49,32 @@ class CartScreen extends StatelessWidget {
         // o carrinho é de uma loja só (a que estava aberta quando a peça entrou)
         body: cart.isEmpty
             ? const EmptyState(icon: Icons.shopping_bag_outlined, text: 'Seu carrinho está vazio.\nEscolha algo na vitrine!')
-            : ListView.separated(
+            : ListView(
                 padding: const EdgeInsets.all(12),
-                itemCount: cart.items.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, i) => _CartLine(item: cart.items[i], cart: cart),
+                children: [
+                  if (_notes.isNotEmpty)
+                    Card(
+                      color: Theme.of(context).colorScheme.tertiaryContainer,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Row(children: [
+                            const Icon(Icons.info_outline_rounded, size: 20),
+                            const SizedBox(width: 8),
+                            const Expanded(child: Text('A loja atualizou seu carrinho', style: TextStyle(fontWeight: FontWeight.w700))),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                              onPressed: () => setState(() => _notes = const []),
+                            ),
+                          ]),
+                          for (final n in _notes) Padding(padding: const EdgeInsets.only(top: 2), child: Text('• $n')),
+                        ]),
+                      ),
+                    ),
+                  for (final item in cart.items)
+                    Padding(padding: const EdgeInsets.only(bottom: 8), child: _CartLine(item: item, cart: cart)),
+                ],
               ),
         bottomNavigationBar: cart.isEmpty
             ? null
@@ -44,6 +97,8 @@ class CartScreen extends StatelessWidget {
   }
 
   Future<void> _checkout(BuildContext context) async {
+    await refresh();
+    if (!context.mounted || AppScope.of(context).cart.isEmpty || _notes.isNotEmpty) return; // mudou algo: revisar antes
     final session = AppScope.of(context).session;
     if (!session.signedIn) {
       final ok = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => LoginScreen(session: AppScope.of(context).session)));
@@ -127,12 +182,14 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
   bool _delivery = false;
   String _payment = 'PIX';
   final _address = TextEditingController();
+  List<SavedAddress> _saved = const [];
   final _notes = TextEditingController();
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
+    _loadAddresses();
     widget.api.get('/api/public/stores/${widget.cart.storeSlug}').then((j) {
       if (!mounted) return;
       final s = StoreInfo.fromJson(j as Map<String, dynamic>);
@@ -143,6 +200,53 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
     }).catchError((Object e) {
       if (mounted) showError(context, e);
     });
+  }
+
+  /// Endereços salvos do cliente (valem em todas as lojas): o último já vem preenchido.
+  Future<void> _loadAddresses() async {
+    try {
+      final list = (await widget.api.get('/api/me/addresses') as List).map((a) => SavedAddress.fromJson(a as Map<String, dynamic>)).toList();
+      if (!mounted) return;
+      setState(() {
+        _saved = list;
+        if (_address.text.isEmpty && list.isNotEmpty) _address.text = list.first.address;
+      });
+    } catch (_) {
+      // sem endereços salvos: digita
+    }
+  }
+
+  Future<void> _saveAddress() async {
+    final label = TextEditingController(text: _saved.isEmpty ? 'Casa' : '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Salvar endereço'),
+        content: TextField(controller: label, maxLength: 40, decoration: const InputDecoration(labelText: 'Nome (Casa, Trabalho...)')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Voltar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Salvar')),
+        ],
+      ),
+    );
+    final name = label.text.trim();
+    label.dispose();
+    if (ok != true || name.isEmpty) return;
+    try {
+      await widget.api.post('/api/me/addresses', {'label': name, 'address': _address.text.trim()});
+      await _loadAddresses();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _deleteAddress(SavedAddress a) async {
+    try {
+      await widget.api.delete('/api/me/addresses/${a.id}');
+      if (mounted) setState(() => _saved = _saved.where((x) => x.id != a.id).toList());
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   @override
@@ -205,14 +309,42 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
                 ),
                 const SizedBox(height: 8),
                 if (!_delivery && s.pickupAddress != null) Text('Retirada em: ${s.pickupAddress}', style: t.bodySmall),
-                if (_delivery)
+                if (_delivery) ...[
+                  if (_saved.isNotEmpty)
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(children: [
+                        for (final a in _saved)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: InputChip(
+                              avatar: const Icon(Icons.home_rounded, size: 18),
+                              label: Text(a.label),
+                              selected: _address.text == a.address,
+                              onPressed: () => setState(() => _address.text = a.address),
+                              onDeleted: () => _deleteAddress(a),
+                            ),
+                          ),
+                      ]),
+                    ),
                   TextField(
                     controller: _address,
                     minLines: 2,
                     maxLines: 3,
                     maxLength: 400,
+                    onChanged: (_) => setState(() {}),
                     decoration: const InputDecoration(labelText: 'Endereço (rua, número, bairro, complemento)'),
                   ),
+                  if (_address.text.trim().length >= 10 && !_saved.any((a) => a.address == _address.text.trim()))
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _saveAddress,
+                        icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                        label: const Text('Salvar este endereço'),
+                      ),
+                    ),
+                ],
                 const SizedBox(height: 12),
                 Text('Pagamento (na retirada/entrega)', style: t.titleMedium),
                 const SizedBox(height: 8),

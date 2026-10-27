@@ -38,7 +38,11 @@ Future<int> notifyNewAlerts(ApiClient api, {bool viaPush = false}) async {
       title: n.title,
       body: n.message,
       payload: payloadFor(orderId: n.orderId, productId: n.productId, slug: n.storeSlug),
-      channel: n.type == 'BACK_IN_STOCK' ? Channels.promotions : Channels.orders,
+      channel: n.type == 'BACK_IN_STOCK'
+          ? Channels.promotions
+          : n.type == 'NEW_ORDER'
+              ? Channels.newOrders
+              : Channels.orders,
     );
   }
   if (newest > last) await _storage.write(key: _lastKey, value: '$newest');

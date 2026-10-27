@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api_client.dart';
@@ -103,13 +104,19 @@ class _OrderScreenState extends State<OrderScreen> {
     }
     final t = Theme.of(context).textTheme;
     return Scaffold(
-      appBar: AppBar(title: Text('Pedido #${o.code}')),
+      appBar: AppBar(title: Text('Pedido #${o.code}'), actions: [
+        IconButton(
+          tooltip: widget.team ? 'Compartilhar / imprimir comprovante' : 'Compartilhar pedido',
+          icon: const Icon(Icons.ios_share_rounded),
+          onPressed: () => SharePlus.instance.share(ShareParams(text: receipt(o), subject: 'Pedido #${o.code}')),
+        ),
+      ]),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.all(16), children: [
           Row(children: [StatusChip(o.status), const Spacer(), Text(dateTime(o.createdAt), style: t.bodySmall)]),
           const SizedBox(height: 12),
-          if (o.customer != null) _CustomerCard(customer: o.customer!, code: o.code),
+          if (o.customer != null) _CustomerCard(customer: o.customer!, code: o.code, status: o.status),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -229,10 +236,11 @@ class _OrderScreenState extends State<OrderScreen> {
 }
 
 class _CustomerCard extends StatelessWidget {
-  const _CustomerCard({required this.customer, required this.code});
+  const _CustomerCard({required this.customer, required this.code, required this.status});
 
   final Customer customer;
   final String code;
+  final OrderStatus status;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -247,10 +255,47 @@ class _CustomerCard extends StatelessWidget {
                 : IconButton(
                     tooltip: 'WhatsApp',
                     icon: const Icon(Icons.chat_rounded),
-                    onPressed: () => launchUrl(whatsappUri(customer.phone!, 'Olá, ${customer.name.split(' ').first}! Sobre o pedido #$code da Loja Max:'),
+                    onPressed: () => launchUrl(whatsappUri(customer.phone!, statusMessage(customer.name, code, status)),
                         mode: LaunchMode.externalApplication),
                   ),
           ),
         ),
       );
+}
+
+/// Comprovante em texto (vai para o WhatsApp, e-mail ou impressora pelo menu de compartilhar do celular).
+String receipt(Order o) {
+  final b = StringBuffer()
+    ..writeln('*Pedido #${o.code}* — ${dateTime(o.createdAt)}')
+    ..writeln('Status: ${o.status.label}')
+    ..writeln();
+  if (o.customer != null) {
+    b.writeln('Cliente: ${o.customer!.name}${o.customer!.phone != null ? ' · ${o.customer!.phone}' : ''}');
+  }
+  b.writeln(o.delivery ? 'Entrega${o.address != null ? ': ${o.address}' : ''}' : 'Retirada na loja');
+  b.writeln();
+  for (final i in o.items) {
+    b.writeln('${i.quantity}x ${i.productName} (${i.variant}) — ${money(i.total)}');
+  }
+  b.writeln();
+  if (o.discount > 0) b.writeln('Desconto: ${money(o.discount)}');
+  if (o.delivery) b.writeln('Entrega: ${o.deliveryFee == 0 ? 'grátis' : money(o.deliveryFee)}');
+  b.writeln('*Total: ${money(o.total)}*');
+  b.writeln('Pagamento: ${paymentLabels[o.paymentMethod] ?? o.paymentMethod} · ${o.paid ? 'pago' : 'a pagar'}');
+  if (o.notes != null) b.writeln('Obs.: ${o.notes}');
+  return b.toString().trim();
+}
+
+/// Mensagem pronta para o cliente, conforme o andamento do pedido.
+String statusMessage(String name, String code, OrderStatus status) {
+  final first = name.split(' ').first;
+  final what = switch (status) {
+    OrderStatus.pending => 'recebemos o seu pedido e já vamos separar as peças.',
+    OrderStatus.confirmed => 'o seu pedido foi confirmado e estamos separando as peças.',
+    OrderStatus.ready => 'o seu pedido está pronto para retirada!',
+    OrderStatus.shipped => 'o seu pedido saiu para entrega.',
+    OrderStatus.delivered => 'obrigado pela compra! Qualquer dúvida é só chamar.',
+    OrderStatus.canceled => 'precisamos cancelar o seu pedido. Podemos conversar?',
+  };
+  return 'Olá, $first! Pedido #$code: $what';
 }

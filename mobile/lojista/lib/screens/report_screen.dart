@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:loja_core/loja_core.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 
 /// Resumo de vendas do período (padrão: mês atual). Cancelados não contam.
@@ -27,6 +31,22 @@ class _ReportScreenState extends State<ReportScreen> {
 
   String _iso(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  /// Baixa a planilha (CSV, abre no Excel e no Google Planilhas) e abre o menu de compartilhar do celular.
+  Future<void> _export(String kind) async {
+    try {
+      final path = kind == 'orders'
+          ? '/api/store/reports/orders.csv?from=${_iso(_range.start)}&to=${_iso(_range.end)}'
+          : '/api/store/reports/stock.csv';
+      final bytes = await widget.api.getBytes(path);
+      final dir = await getTemporaryDirectory();
+      final name = kind == 'orders' ? 'vendas-${_iso(_range.start)}-a-${_iso(_range.end)}.csv' : 'estoque-${_iso(DateTime.now())}.csv';
+      final file = File('${dir.path}/$name')..writeAsBytesSync(bytes);
+      await SharePlus.instance.share(ShareParams(files: [XFile(file.path, mimeType: 'text/csv')], subject: name));
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _load() async {
     setState(() => _error = null);
     try {
@@ -43,6 +63,15 @@ class _ReportScreenState extends State<ReportScreen> {
     final t = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Resumo de vendas'), actions: [
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.download_rounded),
+          tooltip: 'Exportar planilha',
+          onSelected: _export,
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'orders', child: Text('Vendas do período (planilha)')),
+            PopupMenuItem(value: 'stock', child: Text('Estoque atual (planilha)')),
+          ],
+        ),
         IconButton(
           icon: const Icon(Icons.date_range_rounded),
           onPressed: () async {

@@ -59,16 +59,26 @@ class User {
 
 /// Loja na busca do app do cliente.
 class StoreCard {
-  const StoreCard({required this.slug, required this.name, this.instagram});
+  const StoreCard({required this.slug, required this.name, this.instagram, this.description, this.logoUrl, this.status});
 
   final String slug;
   final String name;
   final String? instagram;
+  final String? description;
+  final String? logoUrl;
+  final OpenStatus? status;
 
-  Map<String, dynamic> toJson() => {'slug': slug, 'name': name, 'instagram': instagram};
+  Map<String, dynamic> toJson() =>
+      {'slug': slug, 'name': name, 'instagram': instagram, 'description': description, 'logoUrl': logoUrl};
 
-  factory StoreCard.fromJson(Map<String, dynamic> j) =>
-      StoreCard(slug: j['slug'] as String, name: j['name'] as String, instagram: j['instagram'] as String?);
+  factory StoreCard.fromJson(Map<String, dynamic> j) => StoreCard(
+        slug: j['slug'] as String,
+        name: j['name'] as String,
+        instagram: j['instagram'] as String?,
+        description: j['description'] as String?,
+        logoUrl: j['logoUrl'] as String?,
+        status: OpenStatus.from(j['status']),
+      );
 }
 
 /// Seções da loja.
@@ -116,9 +126,12 @@ class Category {
 }
 
 class Photo {
-  const Photo({required this.id, required this.url, required this.thumbUrl, required this.width, required this.height});
+  const Photo({required this.id, required this.url, required this.thumbUrl, required this.width, required this.height, this.color});
 
   final int id;
+
+  /// Cor da peça na foto (nulo = vale para todas).
+  final String? color;
   final String url;
   final String thumbUrl;
   final int width;
@@ -130,6 +143,7 @@ class Photo {
         thumbUrl: j['thumbUrl'] as String,
         width: j['width'] as int,
         height: j['height'] as int,
+        color: j['color'] as String?,
       );
 }
 
@@ -208,6 +222,7 @@ class Product {
     required this.id,
     required this.name,
     this.description,
+    this.sizeChart,
     required this.department,
     this.categoryId,
     this.categoryName,
@@ -228,6 +243,9 @@ class Product {
   final int id;
   final String name;
   final String? description;
+
+  /// Tabela de medidas (texto livre).
+  final String? sizeChart;
   final Department department;
   final int? categoryId;
   final String? categoryName;
@@ -250,6 +268,7 @@ class Product {
         id: j['id'] as int,
         name: j['name'] as String,
         description: j['description'] as String?,
+        sizeChart: j['sizeChart'] as String?,
         department: Department.of(j['department'] as String),
         categoryId: j['categoryId'] as int?,
         categoryName: j['categoryName'] as String?,
@@ -268,10 +287,39 @@ class Product {
       );
 }
 
+/// Aberta/fechada agora ("Aberta agora · fecha às 18:00").
+class OpenStatus {
+  const OpenStatus({required this.open, required this.label});
+
+  final bool open;
+  final String label;
+
+  static OpenStatus? from(Object? j) =>
+      j == null ? null : OpenStatus(open: (j as Map<String, dynamic>)['open'] as bool, label: j['label'] as String);
+}
+
+/// Horário de um dia (vazio = fechado), "HH:mm".
+class DayHours {
+  const DayHours(this.open, this.close);
+
+  final String open;
+  final String close;
+
+  bool get closed => open.isEmpty || close.isEmpty;
+
+  Map<String, dynamic> toJson() => {'open': open, 'close': close};
+}
+
 class StoreInfo {
   const StoreInfo({
     required this.slug,
     required this.name,
+    this.description,
+    this.logoUrl,
+    this.coverUrl,
+    this.openingHours,
+    this.hours = const [],
+    this.status,
     this.whatsapp,
     this.instagram,
     this.pickupAddress,
@@ -283,6 +331,14 @@ class StoreInfo {
 
   final String slug;
   final String name;
+  final String? description;
+  final String? logoUrl;
+  final String? coverUrl;
+
+  /// Os 7 dias (segunda a domingo) quando a loja informou; [hours] são as linhas prontas para mostrar.
+  final List<DayHours>? openingHours;
+  final List<String> hours;
+  final OpenStatus? status;
   final String? whatsapp;
   final String? instagram;
   final String? pickupAddress;
@@ -294,6 +350,14 @@ class StoreInfo {
   factory StoreInfo.fromJson(Map<String, dynamic> j) => StoreInfo(
         slug: j['slug'] as String,
         name: j['name'] as String,
+        description: j['description'] as String?,
+        logoUrl: j['logoUrl'] as String?,
+        coverUrl: j['coverUrl'] as String?,
+        openingHours: (j['openingHours'] as List?)
+            ?.map((d) => DayHours((d as Map<String, dynamic>)['open'] as String? ?? '', d['close'] as String? ?? ''))
+            .toList(),
+        hours: (j['hours'] as List? ?? const []).cast<String>(),
+        status: OpenStatus.from(j['status']),
         whatsapp: j['whatsapp'] as String?,
         instagram: j['instagram'] as String?,
         pickupAddress: j['pickupAddress'] as String?,
@@ -650,5 +714,38 @@ class Promotion {
         active: j['active'] as bool,
         running: j['running'] as bool,
         notifyCustomers: j['notifyCustomers'] as bool,
+      );
+}
+
+/// Endereço salvo do cliente.
+class SavedAddress {
+  const SavedAddress({required this.id, required this.label, required this.address});
+
+  final int id;
+  final String label;
+  final String address;
+
+  factory SavedAddress.fromJson(Map<String, dynamic> j) =>
+      SavedAddress(id: j['id'] as int, label: j['label'] as String, address: j['address'] as String);
+}
+
+/// Linha da conferência do carrinho com a loja (preço e estoque de agora).
+class QuoteLine {
+  const QuoteLine({required this.variantId, required this.available, required this.stock, required this.quantity, this.unitPrice});
+
+  final int variantId;
+  final bool available;
+  final int stock;
+
+  /// O que cabe no estoque (menor que o pedido = faltou peça).
+  final int quantity;
+  final double? unitPrice;
+
+  factory QuoteLine.fromJson(Map<String, dynamic> j) => QuoteLine(
+        variantId: j['variantId'] as int,
+        available: j['available'] as bool,
+        stock: j['stock'] as int,
+        quantity: j['quantity'] as int,
+        unitPrice: _dn(j['unitPrice']),
       );
 }

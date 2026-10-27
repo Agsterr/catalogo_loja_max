@@ -42,6 +42,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   final _form = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _description = TextEditingController();
+  final _sizeChart = TextEditingController();
   final _brand = TextEditingController();
   final _price = TextEditingController();
   final _salePrice = TextEditingController();
@@ -67,7 +68,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _description, _brand, _price, _salePrice, _minStock]) {
+    for (final c in [_name, _description, _sizeChart, _brand, _price, _salePrice, _minStock]) {
       c.dispose();
     }
     for (final v in _variants) {
@@ -98,6 +99,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   void _fill(Product p) {
     _name.text = p.name;
     _description.text = p.description ?? '';
+    _sizeChart.text = p.sizeChart ?? '';
     _brand.text = p.brand ?? '';
     _price.text = p.price.toStringAsFixed(2).replaceAll('.', ',');
     _salePrice.text = p.salePrice?.toStringAsFixed(2).replaceAll('.', ',') ?? '';
@@ -128,6 +130,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     final body = {
       'name': _name.text.trim(),
       'description': _description.text.trim(),
+      'sizeChart': _sizeChart.text.trim(),
       'department': _department.api,
       'categoryId': _categoryId,
       'brand': _brand.text.trim(),
@@ -180,17 +183,59 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     }
   }
 
+  /// Cores cadastradas nos tamanhos (para ligar a foto a uma cor).
+  List<String> get _colors {
+    final out = <String>[];
+    for (final v in _variants) {
+      final c = v.color.text.trim();
+      if (c.isNotEmpty && !out.contains(c)) out.add(c);
+    }
+    return out;
+  }
+
+  Future<void> _photoColor(Photo photo) async {
+    final colors = _colors;
+    if (colors.isEmpty) {
+      showInfo(context, 'Cadastre a cor nos tamanhos para ligar a foto a uma cor.');
+      return;
+    }
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const ListTile(title: Text('Esta foto é de qual cor?')),
+          ListTile(leading: const Icon(Icons.palette_outlined), title: const Text('Todas as cores'), onTap: () => Navigator.pop(context, '')),
+          for (final c in colors)
+            ListTile(leading: ColorDot(name: c, selected: photo.color == c, onTap: null), title: Text(c), onTap: () => Navigator.pop(context, c)),
+        ]),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    try {
+      final json = Photo.fromJson(await widget.api.put('/api/store/photos/${photo.id}/color', {'color': picked}) as Map<String, dynamic>);
+      setState(() => _photos = [for (final p in _photos) p.id == photo.id ? json : p]);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
   Future<void> _photoActions(Photo photo) async {
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (context) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: Text(photo.color == null ? 'Ligar a uma cor' : 'Cor da foto: ${photo.color}'),
+            onTap: () => Navigator.pop(context, 'color'),
+          ),
           ListTile(leading: const Icon(Icons.star_rounded), title: const Text('Usar como capa'), onTap: () => Navigator.pop(context, 'cover')),
           ListTile(leading: const Icon(Icons.delete_outline_rounded), title: const Text('Apagar foto'), onTap: () => Navigator.pop(context, 'delete')),
         ]),
       ),
     );
     if (action == null || !mounted) return;
+    if (action == 'color') return _photoColor(photo);
     try {
       if (action == 'cover') {
         final ids = [photo.id, ..._photos.where((p) => p.id != photo.id).map((p) => p.id)];
@@ -255,7 +300,22 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                     padding: const EdgeInsets.only(right: 8),
                     child: InkWell(
                       onTap: () => _photoActions(p),
-                      child: SizedBox(width: 96, child: ProductImage(url: p.thumbUrl)),
+                      child: SizedBox(
+                        width: 96,
+                        child: Stack(fit: StackFit.expand, children: [
+                          ProductImage(url: p.thumbUrl),
+                          if (p.color != null)
+                            Positioned(
+                              left: 4,
+                              bottom: 4,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
+                                child: Text(p.color!, style: const TextStyle(color: Colors.white, fontSize: 11)),
+                              ),
+                            ),
+                        ]),
+                      ),
                     ),
                   ),
                 _AddPhoto(icon: Icons.photo_camera_rounded, label: 'Câmera', onTap: _busy ? null : () => _addPhoto(ImageSource.camera)),
@@ -329,6 +389,17 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
             maxLines: 6,
             maxLength: 4000,
             decoration: const InputDecoration(labelText: 'Descrição (tecido, medidas, cuidados…)'),
+          ),
+          TextFormField(
+            controller: _sizeChart,
+            minLines: 2,
+            maxLines: 8,
+            maxLength: 4000,
+            decoration: const InputDecoration(
+              labelText: 'Tabela de medidas (opcional)',
+              helperText: 'Ex.: P: busto 84 cm, cintura 66 cm · M: busto 88 cm, cintura 70 cm',
+              helperMaxLines: 2,
+            ),
           ),
           TextFormField(
             controller: _minStock,

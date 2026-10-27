@@ -37,12 +37,20 @@ Geradas pelo próprio Flutter com dados de exemplo: `cd mobile/telas && flutter 
 - Produto com fotos, preço "de/por", **tamanho/cor com estoque próprio** e **"Avise-me quando chegar"**.
 - Carrinho guardado no celular (de uma loja por vez); **retirada** ou **entrega** (taxa e frete grátis a partir de X); pagamento Pix/cartão/dinheiro.
 - Pedido com linha do tempo; cancelar enquanto a loja não separou.
+- **Busca sem acento** (`biquini` acha "Biquíni"), vitrine da loja com **logo, capa, descrição e "aberta agora"** + horários.
+- Produto: **fotos por cor** (toque na cor e as fotos mudam), **zoom nas fotos**, **tabela de medidas** e **compartilhar** o link
+  (`/l/<loja>/p/<id>` abre o app por `lojamax://loja/<loja>/produto/<id>`).
+- Carrinho **conferido com a loja** antes de fechar (esgotou, sobrou menos, preço mudou) e **endereços salvos** (até 10) no pedido.
+- Compartilhar o comprovante do pedido; sessão renovada ao abrir o app.
 - Avisos de todas as lojas em que comprou; promoções das lojas que segue.
 - Conta: dados, senha, **verificação em duas etapas**, **acessos da conta**, sair de todos os aparelhos, excluir conta.
 
 **Lojista (app Loja Max Lojista)**
 - Lojista abre a loja pelo app ("Abrir minha loja") e vira o dono; cadastra funcionários, que entram pelo mesmo app.
 - Pedidos em aberto/por status, avançar status, marcar pago, WhatsApp do cliente.
+- Loja com **logo, capa, descrição e horário por dia**; **tabela de medidas** e **cor da foto** no produto; **estoque rápido** (segure
+  o produto: −1/+1/+5); **exportar pedidos e estoque em planilha (CSV)** no relatório.
+- **Alerta forte de novo pedido** (canal `novos_pedidos`: som alto, vibração e toque insistente).
 - Produtos com tamanhos/cores, **fotos pela câmera/galeria** (R2), entrada/contagem/perda de estoque com histórico paginado.
 - Promoções por período — loja inteira, departamento, categoria ou **um produto só** — com **push para os clientes quando começa**.
 - Dono: resumo de vendas (faturamento, recebido, ticket médio, clientes novos, descontos, gráfico por dia, mais vendidos,

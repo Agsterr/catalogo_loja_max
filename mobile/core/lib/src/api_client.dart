@@ -62,6 +62,22 @@ class ApiClient {
 
   Future<dynamic> get(String path) => _send('GET', path);
 
+  /// Baixa um arquivo (planilha) com o login da pessoa.
+  Future<List<int>> getBytes(String path) async {
+    final jwt = token?.call();
+    try {
+      final res = await _http
+          .get(Uri.parse('$baseUrl$path'), headers: {if (jwt != null) 'Authorization': 'Bearer $jwt'})
+          .timeout(const Duration(seconds: 60));
+      if (res.statusCode / 100 != 2) throw ApiException(res.statusCode, 'Não foi possível baixar o arquivo.');
+      return res.bodyBytes;
+    } on TimeoutException {
+      throw ApiException(0, 'O servidor demorou para responder. Tente novamente.');
+    } on SocketException {
+      throw ApiException(0, 'Sem conexão com a internet.');
+    }
+  }
+
   Future<dynamic> post(String path, [Object? body]) => _send('POST', path, body ?? const {});
 
   Future<dynamic> put(String path, Object body) => _send('PUT', path, body);

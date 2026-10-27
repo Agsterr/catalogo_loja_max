@@ -100,6 +100,35 @@ void main() {
     expect(cart.storeSlug, isNull);
   });
 
+  test('conferência do carrinho tira o esgotado, reduz ao estoque e atualiza o preço', () {
+    final cart = Cart();
+    CartItem item(int id, int qty, double price) => CartItem(
+        variantId: id, productId: id, name: 'Peça $id', variant: 'M', unitPrice: price, quantity: qty, maxStock: 9);
+    cart
+      ..add(item(1, 2, 100), store: 'moda')
+      ..add(item(2, 1, 50), store: 'moda')
+      ..add(item(3, 3, 80), store: 'moda');
+    final notes = cart.applyQuote(const [
+      QuoteLine(variantId: 1, available: true, stock: 1, quantity: 1, unitPrice: 90),
+      QuoteLine(variantId: 2, available: false, stock: 0, quantity: 0),
+      QuoteLine(variantId: 3, available: true, stock: 5, quantity: 3, unitPrice: 80),
+    ]);
+    expect(notes, hasLength(3));
+    expect(cart.items.map((i) => i.variantId), [1, 3]);
+    expect(cart.items.first.quantity, 1);
+    expect(cart.items.first.unitPrice, 90);
+    expect(cart.items.first.maxStock, 1);
+    expect(cart.items.last.maxStock, 5);
+  });
+
+  test('cor do nome e horário da loja', () {
+    expect(colorFor('Preto'), colorFor('preta'));
+    expect(colorFor('Azul marinho'), isNot(colorFor('Rosa')));
+    final s = OpenStatus.from({'open': true, 'label': 'Aberta até 18:00'})!;
+    expect(s.open, isTrue);
+    expect(OpenStatus.from(null), isNull);
+  });
+
   test('pedido da API vira modelo com linha do tempo', () {
     final order = Order.fromJson({
       'id': 1,

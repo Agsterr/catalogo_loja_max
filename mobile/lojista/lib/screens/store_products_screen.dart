@@ -65,6 +65,17 @@ class _StoreProductsScreenState extends State<StoreProductsScreen> {
     }
   }
 
+  /// Segurar o produto: ajuste rápido do estoque de cada tamanho/cor, sem abrir o formulário.
+  Future<void> _quickStock(ProductCard product) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _QuickStockSheet(api: widget.api, product: product),
+    );
+    _reload();
+  }
+
   Future<void> _openForm([int? id]) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => ProductFormScreen(api: widget.api, productId: id)));
     _reload();
@@ -145,10 +156,92 @@ class _StoreProductsScreenState extends State<StoreProductsScreen> {
                   ),
                   itemCount: _items.length,
                   itemBuilder: (context, i) =>
-                      ProductTile(product: _items[i], showStock: true, onTap: () => _openForm(_items[i].id)),
+                      ProductTile(
+                    product: _items[i],
+                    showStock: true,
+                    onTap: () => _openForm(_items[i].id),
+                    onLongPress: () => _quickStock(_items[i]),
+                  ),
                 ),
               ),
             ),
+    );
+  }
+}
+
+/// Entrada e baixa rápidas de estoque (−1, +1, +5) por tamanho/cor. Cada toque vira um lançamento no histórico.
+class _QuickStockSheet extends StatefulWidget {
+  const _QuickStockSheet({required this.api, required this.product});
+
+  final ApiClient api;
+  final ProductCard product;
+
+  @override
+  State<_QuickStockSheet> createState() => _QuickStockSheetState();
+}
+
+class _QuickStockSheetState extends State<_QuickStockSheet> {
+  List<Variant>? _variants;
+  final _busy = <int>{};
+
+  @override
+  void initState() {
+    super.initState();
+    widget.api.get('/api/store/products/${widget.product.id}').then((j) {
+      if (mounted) setState(() => _variants = Product.fromJson(j as Map<String, dynamic>).variants.where((v) => v.active).toList());
+    }).catchError((Object e) {
+      if (mounted) showError(context, e);
+    });
+  }
+
+  Future<void> _move(Variant v, int delta) async {
+    if (_busy.contains(v.id) || v.stock + delta < 0) return;
+    setState(() => _busy.add(v.id));
+    try {
+      final json = await widget.api.post('/api/store/variants/${v.id}/stock',
+          {'type': delta > 0 ? 'IN' : 'LOSS', 'quantity': delta.abs(), 'note': 'Ajuste rápido'}) as Map<String, dynamic>;
+      final stock = json['stock'] as int;
+      if (mounted) {
+        setState(() => _variants = [
+              for (final x in _variants!)
+                x.id == v.id ? Variant(id: x.id, size: x.size, color: x.color, sku: x.sku, stock: stock, active: x.active) : x,
+            ]);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy.remove(v.id));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final variants = _variants;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, MediaQuery.viewInsetsOf(context).bottom + 16),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(widget.product.name, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        if (variants == null)
+          const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+        else
+          for (final v in variants)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(v.label),
+              subtitle: Text(v.stock == 0 ? 'Esgotado' : '${v.stock} em estoque',
+                  style: TextStyle(color: v.stock == 0 ? Theme.of(context).colorScheme.error : null)),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton.outlined(onPressed: v.stock > 0 ? () => _move(v, -1) : null, icon: const Icon(Icons.remove_rounded)),
+                const SizedBox(width: 4),
+                IconButton.outlined(onPressed: () => _move(v, 1), icon: const Icon(Icons.add_rounded)),
+                const SizedBox(width: 4),
+                OutlinedButton(onPressed: () => _move(v, 5), child: const Text('+5')),
+              ]),
+            ),
+        const SizedBox(height: 8),
+        Text('Contagem e perdas: abra o produto.', style: Theme.of(context).textTheme.bodySmall),
+      ]),
     );
   }
 }

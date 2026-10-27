@@ -136,7 +136,11 @@ class Push {
       title: n.title ?? 'Loja Max',
       body: n.body ?? '',
       payload: _payload(m),
-      channel: promo ? Channels.promotions : Channels.orders,
+      channel: promo
+          ? Channels.promotions
+          : m.data['kind'] == 'NEW_ORDER'
+              ? Channels.newOrders
+              : Channels.orders,
     );
   }
 }

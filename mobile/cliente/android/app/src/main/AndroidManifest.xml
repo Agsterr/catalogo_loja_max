@@ -30,6 +30,13 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Link de produto compartilhado: lojamax://loja/<slug>/produto/<id> (a página /l/... da loja abre este link) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="lojamax" android:host="loja"/>
+            </intent-filter>
         </activity>
         <!-- Canal padrão do push quando o app está fechado (o app cria "pedidos" e "promocoes" ao abrir). -->
         <meta-data
