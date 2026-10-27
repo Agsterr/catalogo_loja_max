@@ -334,6 +334,10 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
   final _address = TextEditingController();
   final _fee = TextEditingController();
   final _free = TextEditingController();
+  final _city = TextEditingController();
+  final _uf = TextEditingController();
+  double? _lat;
+  double? _lng;
   bool _pickup = true;
   bool _delivery = true;
   bool _loaded = false;
@@ -362,6 +366,10 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
         _instagram.text = s.instagram ?? '';
         _address.text = s.pickupAddress ?? '';
         _fee.text = s.deliveryFee.toStringAsFixed(2).replaceAll('.', ',');
+        _city.text = s.city ?? '';
+        _uf.text = s.state ?? '';
+        _lat = s.latitude;
+        _lng = s.longitude;
         _free.text = s.freeDeliveryFrom?.toStringAsFixed(2).replaceAll('.', ',') ?? '';
         _pickup = s.pickupEnabled;
         _delivery = s.deliveryEnabled;
@@ -380,13 +388,31 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _description, _whatsapp, _instagram, _address, _fee, _free]) {
+    for (final c in [_name, _description, _whatsapp, _instagram, _address, _fee, _free, _city, _uf]) {
       c.dispose();
     }
     super.dispose();
   }
 
   static double? _money(String s) => double.tryParse(s.trim().replaceAll('.', '').replaceAll(',', '.'));
+
+  Future<void> _useMyLocation() async {
+    setState(() => _busy = true);
+    try {
+      final p = await currentPosition();
+      if (mounted) {
+        setState(() {
+          _lat = p.lat;
+          _lng = p.lng;
+        });
+        showInfo(context, 'Localização marcada. Toque em Salvar para guardar.');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _save() async {
     setState(() => _busy = true);
@@ -401,6 +427,10 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
         'deliveryEnabled': _delivery,
         'deliveryFee': _money(_fee.text) ?? 0,
         'freeDeliveryFrom': _free.text.trim().isEmpty ? null : _money(_free.text),
+        'city': _city.text.trim(),
+        'state': _uf.text.trim(),
+        'latitude': _lat,
+        'longitude': _lng,
         'openingHours': _hoursSet ? _week.map((d) => d.toJson()).toList() : null,
       });
       if (mounted) showInfo(context, 'Dados da loja salvos.');
@@ -522,6 +552,35 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                 maxLines: 3,
                 decoration: const InputDecoration(labelText: 'Sobre a loja (aparece na vitrine)'),
               ),
+              const SizedBox(height: 4),
+              Text('Onde a loja fica', style: t.titleMedium),
+              const SizedBox(height: 4),
+              Text('Os clientes da sua região encontram a loja pela cidade e pela distância.', style: t.bodySmall),
+              const SizedBox(height: 8),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(
+                    flex: 3,
+                    child: TextField(controller: _city, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Cidade'))),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: TextField(
+                        controller: _uf,
+                        maxLength: 2,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: const InputDecoration(labelText: 'UF', counterText: ''))),
+              ]),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : _useMyLocation,
+                    icon: const Icon(Icons.my_location_rounded),
+                    label: Text(_lat == null ? 'Marcar a loja no mapa (estou na loja)' : 'Localização marcada · atualizar'),
+                  ),
+                ),
+                if (_lat != null) IconButton(tooltip: 'Remover localização', onPressed: () => setState(() => _lat = _lng = null), icon: const Icon(Icons.close_rounded)),
+              ]),
+              const SizedBox(height: 12),
               TextField(controller: _whatsapp, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'WhatsApp')),
               const SizedBox(height: 12),
               TextField(controller: _instagram, decoration: const InputDecoration(labelText: 'Instagram', prefixText: '@')),

@@ -32,6 +32,9 @@ Geradas pelo próprio Flutter com dados de exemplo: `cd mobile/telas && flutter 
 ## Funcionalidades
 
 **Cliente**
+- **Lojas da sua região:** botão **"Perto de mim"** (ordena por distância, mostra "1,2 km") e filtro por **cidade**. A posição só
+  vai na consulta e não é guardada; a precisão é baixa de propósito. A loja informa cidade/UF e, se quiser, marca o ponto com
+  "estou na loja".
 - Busca a loja (ou abre direto no app de uma loja só — `--dart-define=STORE_SLUG=...`).
 - Vitrine por departamento (**Roupas, Calçados, Bijuterias**), categorias, busca, ordenação e filtro de promoções — sem precisar de conta.
 - Produto com fotos, preço "de/por", **tamanho/cor com estoque próprio** e **"Avise-me quando chegar"**.
@@ -122,7 +125,7 @@ backend/src/main/java/com/max/loja
 | Método | Rota | Quem |
 |---|---|---|
 | POST | `/api/auth/register` (cliente) · `/register-store` (lojista) · `/login` (`code` com 2 etapas) · `/forgot-password` · `/reset-password` | público |
-| GET | `/api/public/stores?q=` · `/api/public/stores/{slug}` · `/categories` · `/products?department=&categoryId=&q=&onSale=&sort=&page=` · `/products/{id}` · `/promotions` | público |
+| GET | `/api/public/stores?q=&city=&state=&lat=&lng=&radiusKm=` · `/api/public/store-cities` · `/api/public/stores/{slug}` · `/categories` · `/products?department=&categoryId=&q=&onSale=&sort=&page=` · `/products/{id}` · `/promotions` | público |
 | POST | `/api/public/stores/{slug}/push` (celular segue a loja) · `/api/push/ack` | público |
 | GET · PUT · POST | `/api/me` · `/token` · `/password` · `/logout-all` · `/delete` · `/2fa/setup·enable·disable` · `/security-events` · `/push-token` · `/watches/{productId}` | logado |
 | GET · POST | `/api/notifications?page=` · `/read` · `/{id}/read` | logado |

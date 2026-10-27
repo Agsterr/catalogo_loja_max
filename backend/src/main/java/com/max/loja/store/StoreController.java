@@ -6,6 +6,8 @@ import com.max.loja.shared.PageResponse;
 import com.max.loja.store.StoreService.StoreCard;
 import com.max.loja.store.StoreService.StoreRequest;
 import com.max.loja.store.StoreService.StoreResponse;
+import java.util.List;
+
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -35,9 +37,24 @@ public class StoreController {
     /** Busca de lojas no app do cliente (bloqueadas não aparecem). */
     @GetMapping("/api/public/stores")
     public PageResponse<StoreCard> search(@RequestParam(required = false) String q,
+                                          @RequestParam(required = false) String city,
+                                          @RequestParam(required = false) String state,
+                                          @RequestParam(required = false) Double lat,
+                                          @RequestParam(required = false) Double lng,
+                                          @RequestParam(required = false) Double radiusKm,
                                           @RequestParam(required = false) Integer page,
                                           @RequestParam(required = false) Integer size) {
-        return service.search(q == null || q.length() <= 60 ? q : q.substring(0, 60), page, size);
+        return service.search(cut(q), cut(city), state, lat, lng, radiusKm, page, size);
+    }
+
+    /** Cidades que têm loja (filtro "minha cidade" do app). */
+    @GetMapping("/api/public/store-cities")
+    public List<StoreService.CityCount> cities() {
+        return service.cities();
+    }
+
+    private static String cut(String s) {
+        return s == null || s.length() <= 60 ? s : s.substring(0, 60);
     }
 
     /** Dados da loja (o tenant já veio do slug, pelo {@code StoreTenantInterceptor}). */

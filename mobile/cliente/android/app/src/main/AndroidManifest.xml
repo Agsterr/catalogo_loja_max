@@ -4,6 +4,8 @@
     <!-- Avisos (push do Firebase e notificações locais): Android 13+ pede permissão; reagenda depois de reiniciar. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- Lojas perto de você / posição da loja: só quando a pessoa toca no botão. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 
     <application
         android:label="Loja Max"

@@ -49,6 +49,12 @@ public class Store {
     /** Horário por dia da semana em JSON (veja {@code StoreHours}); nulo = não informado. */
     private String openingHours;
 
+    /** Onde a loja fica: cidade/UF para filtrar e coordenadas (opcionais) para ordenar por distância. */
+    private String city;
+    private String state;
+    private Double latitude;
+    private Double longitude;
+
     /** Bloqueada pelo administrador da plataforma. */
     private boolean blocked;
     private String blockedReason;

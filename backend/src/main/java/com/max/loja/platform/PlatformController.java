@@ -64,7 +64,7 @@ public class PlatformController {
     public PageResponse<StoreAdminResponse> stores(@RequestParam(required = false) String q,
                                                    @RequestParam(required = false) Integer page,
                                                    @RequestParam(required = false) Integer size) {
-        return PageResponse.of(stores.search(Search.like(q == null ? "" : q), true, PageResponse.request(page, size, Sort.by("name"))),
+        return PageResponse.of(stores.search(Search.like(q == null ? "" : q), "%%", "", null, null, null, true, PageResponse.request(page, size, Sort.by("name"))),
                 this::response);
     }
 

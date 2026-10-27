@@ -6,6 +6,7 @@ export 'src/api_client.dart';
 export 'src/background.dart';
 export 'src/config.dart';
 export 'src/format.dart';
+export 'src/location.dart';
 export 'src/models.dart';
 export 'src/notifications.dart';
 export 'src/push.dart';

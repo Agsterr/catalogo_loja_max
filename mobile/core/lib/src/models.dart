@@ -59,7 +59,7 @@ class User {
 
 /// Loja na busca do app do cliente.
 class StoreCard {
-  const StoreCard({required this.slug, required this.name, this.instagram, this.description, this.logoUrl, this.status});
+  const StoreCard({required this.slug, required this.name, this.instagram, this.description, this.logoUrl, this.status, this.city, this.state, this.distanceKm});
 
   final String slug;
   final String name;
@@ -67,6 +67,14 @@ class StoreCard {
   final String? description;
   final String? logoUrl;
   final OpenStatus? status;
+  final String? city;
+  final String? state;
+
+  /// Só quando a busca mandou a posição do cliente e a loja informou a dela.
+  final double? distanceKm;
+
+  /// "Cidade - UF" (ou só a cidade).
+  String? get place => city == null ? null : (state == null ? city : '$city - $state');
 
   Map<String, dynamic> toJson() =>
       {'slug': slug, 'name': name, 'instagram': instagram, 'description': description, 'logoUrl': logoUrl};
@@ -78,7 +86,22 @@ class StoreCard {
         description: j['description'] as String?,
         logoUrl: j['logoUrl'] as String?,
         status: OpenStatus.from(j['status']),
+        city: j['city'] as String?,
+        state: j['state'] as String?,
+        distanceKm: _dn(j['distanceKm']),
       );
+}
+
+/// Cidade que tem loja, com a quantidade (filtro do cliente).
+class CityCount {
+  const CityCount({required this.city, this.state, required this.total});
+
+  final String city;
+  final String? state;
+  final int total;
+
+  factory CityCount.fromJson(Map<String, dynamic> j) =>
+      CityCount(city: j['city'] as String, state: j['state'] as String?, total: (j['total'] as num).toInt());
 }
 
 /// Seções da loja.
@@ -327,6 +350,10 @@ class StoreInfo {
     required this.deliveryEnabled,
     required this.deliveryFee,
     this.freeDeliveryFrom,
+    this.city,
+    this.state,
+    this.latitude,
+    this.longitude,
   });
 
   final String slug;
@@ -346,6 +373,10 @@ class StoreInfo {
   final bool deliveryEnabled;
   final double deliveryFee;
   final double? freeDeliveryFrom;
+  final String? city;
+  final String? state;
+  final double? latitude;
+  final double? longitude;
 
   factory StoreInfo.fromJson(Map<String, dynamic> j) => StoreInfo(
         slug: j['slug'] as String,
@@ -365,6 +396,10 @@ class StoreInfo {
         deliveryEnabled: j['deliveryEnabled'] as bool,
         deliveryFee: _d(j['deliveryFee']),
         freeDeliveryFrom: _dn(j['freeDeliveryFrom']),
+        city: j['city'] as String?,
+        state: j['state'] as String?,
+        latitude: _dn(j['latitude']),
+        longitude: _dn(j['longitude']),
       );
 }
 

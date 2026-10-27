@@ -464,6 +464,25 @@ class StoreFlowIntegrationTest {
         call(owner, org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/store/settings/logo"), null,
                 status().isOk());
 
+        // localização: cidade/UF e distância ("lojas perto de mim")
+        String cidade = "Cidade" + shop.slug().substring(5).replace("-", "x");
+        settings.remove("openingHours");
+        settings.put("city", cidade);
+        settings.put("state", "sp");
+        settings.put("latitude", -23.5505);
+        settings.put("longitude", -46.6333);
+        JsonNode located = call(owner, put("/api/store/settings"), settings, status().isOk());
+        assertThat(located.get("state").asText()).isEqualTo("SP");
+        JsonNode inCity = call(null, get("/api/public/stores?city=" + cidade.toLowerCase()), null, status().isOk());
+        assertThat(inCity.get("items").findValuesAsText("slug")).containsExactly(shop.slug());
+        JsonNode near = call(null, get("/api/public/stores?lat=-23.56&lng=-46.64&radiusKm=5&city=" + cidade), null, status().isOk());
+        assertThat(near.get("items").get(0).get("distanceKm").asDouble()).isBetween(0.5, 3.0);
+        assertThat(call(null, get("/api/public/stores?lat=-22.90&lng=-43.17&radiusKm=5&city=" + cidade), null, status().isOk())
+                .get("total").asLong()).isZero(); // Rio de Janeiro: fora do raio
+        assertThat(call(null, get("/api/public/store-cities"), null, status().isOk()).findValuesAsText("city")).contains(cidade);
+        settings.put("latitude", 99);
+        call(owner, put("/api/store/settings"), settings, status().isBadRequest());
+
         // conferência do carrinho: preço de agora, estoque e peça de outra loja
         long v42 = product.get("variants").get(1).get("id").asLong();
         Shop other = openStore("Outra");

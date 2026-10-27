@@ -147,9 +147,15 @@ Map<String, dynamic> _summary(int id, String code, String status, String name, S
     };
 
 Object? _route(String path) {
+  if (path == '/api/public/store-cities') {
+    return [
+      {'city': 'Campinas', 'state': 'SP', 'total': 12},
+      {'city': 'Valinhos', 'state': 'SP', 'total': 4},
+    ];
+  }
   if (path == '/api/public/stores') {
     return _page([
-      {'id': 1, 'slug': 'moda-da-ana', 'name': 'Moda da Ana', 'instagram': 'modadaana', 'logoUrl': _photo('bolsa'), 'status': {'open': true, 'label': 'Aberta agora'}},
+      {'id': 1, 'slug': 'moda-da-ana', 'name': 'Moda da Ana', 'instagram': 'modadaana', 'city': 'Campinas', 'state': 'SP', 'distanceKm': 1.2, 'logoUrl': _photo('bolsa'), 'status': {'open': true, 'label': 'Aberta agora'}},
       {'id': 2, 'slug': 'pe-direito', 'name': 'Pé Direito Calçados', 'instagram': 'pedireito'},
       {'id': 3, 'slug': 'brilho-bijus', 'name': 'Brilho Bijus', 'instagram': 'brilhobijus'},
       {'id': 4, 'slug': 'casa-da-moda', 'name': 'Casa da Moda', 'instagram': null},

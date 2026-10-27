@@ -24,6 +24,7 @@ dependencies:
   firebase_messaging: ^17.0.0
   flutter_local_notifications: ^21.0.0
   workmanager: ^0.10.10
+  geolocator: ^14.1.2
 
 dev_dependencies:
   flutter_test:

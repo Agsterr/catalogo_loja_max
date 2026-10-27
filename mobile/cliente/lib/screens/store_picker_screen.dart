@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:loja_core/loja_core.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_scope.dart';
 
@@ -19,6 +20,47 @@ class _StorePickerScreenState extends State<StorePickerScreen> {
   String _q = '';
   Timer? _debounce;
   var _key = GlobalKey<PagedListState<StoreCard>>();
+  GeoPoint? _near;
+  String? _city;
+  bool _locating = false;
+  List<CityCount> _cities = const [];
+
+  static const _cityPref = 'store_picker_city';
+
+  @override
+  void initState() {
+    super.initState();
+    widget.api.get('/api/public/store-cities').then((j) {
+      if (mounted) setState(() => _cities = (j as List).map((c) => CityCount.fromJson(c as Map<String, dynamic>)).toList());
+    }).catchError((_) {});
+    SharedPreferences.getInstance().then((p) {
+      final saved = p.getString(_cityPref);
+      if (saved != null && mounted) _apply(city: saved);
+    }).catchError((_) {});
+  }
+
+  void _apply({String? city, GeoPoint? near, bool clearCity = false, bool clearNear = false}) {
+    setState(() {
+      if (clearCity) _city = null;
+      if (clearNear) _near = null;
+      _city = city ?? _city;
+      _near = near ?? _near;
+      _key = GlobalKey();
+    });
+    SharedPreferences.getInstance().then((p) => _city == null ? p.remove(_cityPref) : p.setString(_cityPref, _city!)).catchError((_) => false);
+  }
+
+  Future<void> _toggleNear() async {
+    if (_near != null) return _apply(clearNear: true);
+    setState(() => _locating = true);
+    try {
+      _apply(near: await currentPosition());
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -74,6 +116,39 @@ class _StorePickerScreenState extends State<StorePickerScreen> {
               ),
             ]),
           ),
+          SizedBox(
+            height: 56,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterChip(
+                    avatar: _locating
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.near_me_rounded, size: 18),
+                    label: const Text('Perto de mim'),
+                    selected: _near != null,
+                    onSelected: _locating ? null : (_) => _toggleNear(),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(label: const Text('Todas as cidades'), selected: _city == null, onSelected: (_) => _apply(clearCity: true)),
+                ),
+                for (final c in _cities)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text('${c.city}${c.state == null ? '' : ' - ${c.state}'} (${c.total})'),
+                      selected: _city == c.city,
+                      onSelected: (_) => _apply(city: c.city),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           if (recent.isNotEmpty && _q.isEmpty)
             SizedBox(
               height: 56,
@@ -97,7 +172,12 @@ class _StorePickerScreenState extends State<StorePickerScreen> {
             child: PagedList<StoreCard>(
               key: _key,
               load: (page) async => PageResult.fromJson(
-                  await widget.api.get('/api/public/stores?${Uri(queryParameters: {'page': '$page', 'q': _q}).query}')
+                  await widget.api.get('/api/public/stores?${Uri(queryParameters: {
+                    'page': '$page',
+                    'q': _q,
+                    'city': ?_city,
+                    if (_near != null) ...{'lat': '${_near!.lat}', 'lng': '${_near!.lng}'},
+                  }).query}')
                       as Map<String, dynamic>,
                   StoreCard.fromJson),
               empty: const EmptyState(icon: Icons.storefront_outlined, text: 'Nenhuma loja encontrada.'),
@@ -107,6 +187,9 @@ class _StorePickerScreenState extends State<StorePickerScreen> {
                   title: Text(s.name),
                   subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     if (s.description != null) Text(s.description!, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    if (s.place != null || s.distanceKm != null)
+                      Text([if (s.distanceKm != null) '${s.distanceKm!.toStringAsFixed(1).replaceAll('.', ',')} km', ?s.place].join(' · '),
+                          style: t.bodySmall),
                     OpenBadge(s.status),
                     if (s.description == null && s.status == null && s.instagram != null) Text('@${s.instagram!.replaceAll('@', '')}'),
                   ]),
