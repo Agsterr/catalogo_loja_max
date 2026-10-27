@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_scope.dart';
 import '../background.dart';
 import '../notifications.dart';
+import '../push.dart';
 import 'account_screen.dart';
 import 'cart_screen.dart';
 import 'catalog_screen.dart';
@@ -11,8 +12,9 @@ import 'notifications_screen.dart';
 import 'order_screen.dart';
 import 'orders_screen.dart';
 import 'product_screen.dart';
+import 'store_picker_screen.dart';
 
-/// App do cliente: vitrine aberta a todos; pedidos e avisos pedem login.
+/// App do cliente: escolhe a loja e vê a vitrine dela (aberta a todos); pedidos e avisos pedem login.
 class CustomerShell extends StatefulWidget {
   const CustomerShell({super.key});
 
@@ -62,21 +64,49 @@ class _CustomerShellState extends State<CustomerShell> with WidgetsBindingObserv
     open(payload);
   }
 
+  /// Abre o pedido/produto do aviso, na loja dele (o cliente recebe avisos de todas em que comprou).
   void open(String payload) {
-    final session = AppScope.of(context).session;
-    final id = int.tryParse(payload.split(':').last);
-    if (id == null) return;
-    if (payload.startsWith('order:') && session.signedIn) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => OrderScreen(api: session.api, orderId: id)));
-    } else if (payload.startsWith('product:')) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => ProductScreen(api: session.api, productId: id)));
+    final scope = AppScope.of(context);
+    final target = parsePayload(payload);
+    final slug = target?.slug ?? scope.store.slug;
+    if (target == null || slug == null) return;
+    if (target.kind == 'order' && scope.session.signedIn) {
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => OrderScreen(api: scope.session.api, orderId: target.id, slug: slug)));
+    } else if (target.kind == 'product') {
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => ProductScreen(api: scope.session.api, slug: slug, productId: target.id)));
+    }
+  }
+
+  String? _followed;
+
+  /// Loja aberta: o celular passa a receber as promoções dela; app de loja fixa busca o nome.
+  void _storeOpened(String slug) {
+    if (_followed == slug) return;
+    _followed = slug;
+    Push.follow(slug);
+    final store = AppScope.of(context).store;
+    if (store.store?.name.isEmpty ?? false) {
+      AppScope.of(context).session.api.get('/api/public/stores/$slug').then((j) {
+        store.rename((j as Map<String, dynamic>)['name'] as String);
+      }).catchError((Object _) {});
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
+    return ListenableBuilder(listenable: scope.store, builder: (context, _) => _build(context, scope));
+  }
+
+  Widget _build(BuildContext context, AppScope scope) {
     final session = scope.session;
+    final store = scope.store.store;
+    if (store == null) return StorePickerScreen(api: session.api);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _storeOpened(store.slug);
+    });
     Widget needsLogin(String text) => Scaffold(
           body: Center(
             child: Padding(
@@ -93,9 +123,17 @@ class _CustomerShellState extends State<CustomerShell> with WidgetsBindingObserv
           ),
         );
     final pages = [
-      CatalogScreen(api: session.api),
+      CatalogScreen(
+        key: ValueKey('vitrine-${store.slug}'),
+        api: session.api,
+        slug: store.slug,
+        storeName: store.name,
+        onSwitchStore: scope.store.fixed ? null : scope.store.leave,
+      ),
       const CartScreen(),
-      session.signedIn ? OrdersScreen(api: session.api) : needsLogin('Entre para ver seus pedidos.'),
+      session.signedIn
+          ? OrdersScreen(key: ValueKey('pedidos-${store.slug}'), api: session.api, slug: store.slug)
+          : needsLogin('Entre para ver seus pedidos.'),
       session.signedIn
           ? NotificationsScreen(key: _inbox, session: session, onOpen: open, onUnread: (n) => setState(() => _unread = n))
           : needsLogin('Entre para receber os avisos dos seus pedidos.'),

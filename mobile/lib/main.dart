@@ -6,7 +6,9 @@ import 'api_client.dart';
 import 'app_scope.dart';
 import 'background.dart';
 import 'cart.dart';
+import 'current_store.dart';
 import 'notifications.dart';
+import 'platform/platform_shell.dart';
 import 'push.dart';
 import 'session.dart';
 import 'screens/blocked_screen.dart';
@@ -21,19 +23,21 @@ Future<void> main() async {
   await LocalNotifications.instance.init();
   final session = Session();
   final cart = Cart();
-  await cart.load();
+  final store = CurrentStore();
+  await Future.wait([cart.load(), store.load()]);
   await session.restore();
-  runApp(LojaApp(session: session, cart: cart));
+  runApp(LojaApp(session: session, cart: cart, store: store));
   Push.askPermissionOnce();
   Push.start(session);
   scheduleBackgroundChecks();
 }
 
 class LojaApp extends StatefulWidget {
-  const LojaApp({super.key, required this.session, required this.cart});
+  const LojaApp({super.key, required this.session, required this.cart, required this.store});
 
   final Session session;
   final Cart cart;
+  final CurrentStore store;
 
   @override
   State<LojaApp> createState() => _LojaAppState();
@@ -80,6 +84,7 @@ class _LojaAppState extends State<LojaApp> {
     return AppScope(
       session: session,
       cart: widget.cart,
+      store: widget.store,
       child: MaterialApp(
         title: 'Loja Max',
         navigatorKey: _navigator,
@@ -104,6 +109,7 @@ class _LojaAppState extends State<LojaApp> {
                 onSignOut: session.signOut,
               ),
             _ when session.user?.isTeam ?? false => StoreShell(key: ValueKey(session.user!.id)),
+            _ when session.user?.isPlatformAdmin ?? false => const PlatformShell(),
             _ => const CustomerShell(),
           },
         ),

@@ -61,12 +61,13 @@ class _StoreShellState extends State<StoreShell> with WidgetsBindingObserver {
 
   void _open(String payload) {
     final api = AppScope.of(context).session.api;
-    final id = int.tryParse(payload.split(':').last);
-    if (id == null) return;
-    if (payload.startsWith('order:')) {
+    final target = parsePayload(payload);
+    if (target == null) return;
+    final id = target.id;
+    if (target.kind == 'order') {
       Navigator.push(context, MaterialPageRoute(builder: (_) => OrderScreen(api: api, orderId: id, team: true)))
           .then((_) => _orders.currentState?.refresh());
-    } else if (payload.startsWith('product:')) {
+    } else {
       Navigator.push(context, MaterialPageRoute(builder: (_) => ProductFormScreen(api: api, productId: id)));
     }
   }

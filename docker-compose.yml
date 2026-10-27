@@ -25,8 +25,8 @@ services:
       DB_USER: loja
       DB_PASSWORD: ${DB_PASSWORD:-loja}
       JWT_SECRET: ${JWT_SECRET:-troque-este-segredo-com-32-caracteres-ou-mais}
-      STORE_OWNER_EMAIL: ${STORE_OWNER_EMAIL:-dono@lojamax.local}
-      STORE_OWNER_PASSWORD: ${STORE_OWNER_PASSWORD:-TroqueEssaSenha1}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-admin@lojamax.local}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-TroqueEssaSenha123}
     ports:
       - "8080:8080"
     volumes:

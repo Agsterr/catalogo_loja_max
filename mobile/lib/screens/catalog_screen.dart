@@ -8,11 +8,18 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import 'product_screen.dart';
 
-/// Vitrine: departamentos (roupas, calçados, bijuterias), categorias, busca e promoções.
+/// Vitrine de uma loja: departamentos (roupas, calçados, bijuterias), categorias, busca e promoções.
 class CatalogScreen extends StatefulWidget {
-  const CatalogScreen({super.key, required this.api});
+  const CatalogScreen({super.key, required this.api, required this.slug, required this.storeName, this.onSwitchStore});
 
   final ApiClient api;
+  final String slug;
+  final String storeName;
+
+  /// Trocar de loja (nulo no app de uma loja só).
+  final VoidCallback? onSwitchStore;
+
+  String get base => '/api/public/stores/$slug';
 
   @override
   State<CatalogScreen> createState() => _CatalogScreenState();
@@ -57,8 +64,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   Future<void> _loadExtras() async {
     try {
-      final cats = await widget.api.get('/api/public/categories') as List;
-      final promos = await widget.api.get('/api/public/promotions') as List;
+      final cats = await widget.api.get('${widget.base}/categories') as List;
+      final promos = await widget.api.get('${widget.base}/promotions') as List;
       if (!mounted) return;
       setState(() {
         _categories = cats.map((c) => Category.fromJson(c as Map<String, dynamic>)).toList();
@@ -93,7 +100,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       if (_sort.isNotEmpty) 'sort': _sort,
     };
     try {
-      final json = await widget.api.get('/api/public/products?${Uri(queryParameters: query).query}') as Map<String, dynamic>;
+      final json = await widget.api.get('${widget.base}/products?${Uri(queryParameters: query).query}') as Map<String, dynamic>;
       if (!mounted || generation != _generation) return;
       final page = PageResult.fromJson(json, ProductCard.fromJson);
       setState(() {
@@ -121,7 +128,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
     final cats = _categories.where((c) => _department != null && c.department == _department).toList();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Loja Max'),
+        title: InkWell(
+          onTap: widget.onSwitchStore,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Flexible(child: Text(widget.storeName.isEmpty ? 'Loja Max' : widget.storeName, overflow: TextOverflow.ellipsis)),
+            if (widget.onSwitchStore != null) const Icon(Icons.expand_more_rounded),
+          ]),
+        ),
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.sort_rounded),
@@ -180,7 +193,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       final p = _promotions[i];
                       if (p.productId != null) {
                         Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => ProductScreen(api: widget.api, productId: p.productId!)));
+                            MaterialPageRoute(builder: (_) => ProductScreen(api: widget.api, slug: widget.slug, productId: p.productId!)));
                         return;
                       }
                       setState(() {
@@ -263,7 +276,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 itemBuilder: (context, i) => ProductTile(
                   product: _items[i],
                   onTap: () => Navigator.push(
-                      context, MaterialPageRoute(builder: (_) => ProductScreen(api: widget.api, productId: _items[i].id))),
+                      context, MaterialPageRoute(builder: (_) => ProductScreen(api: widget.api, slug: widget.slug, productId: _items[i].id))),
                 ),
               ),
             ),

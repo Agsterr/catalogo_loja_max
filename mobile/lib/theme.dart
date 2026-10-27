@@ -7,11 +7,22 @@ class AppTheme {
   static const brand = Color(0xFFB0306A);
   static const sale = Color(0xFFD7263D);
 
-  static ThemeData light() => _base(ColorScheme.fromSeed(seedColor: brand));
+  // "fidelity": mantém o rosé da marca vivo nos botões (o padrão do Material 3 deixa a cor apagada)
+  static ThemeData light() =>
+      _base(ColorScheme.fromSeed(seedColor: brand, dynamicSchemeVariant: DynamicSchemeVariant.fidelity));
 
-  static ThemeData dark() => _base(ColorScheme.fromSeed(seedColor: brand, brightness: Brightness.dark));
+  static ThemeData dark() => _base(ColorScheme.fromSeed(
+      seedColor: brand, brightness: Brightness.dark, dynamicSchemeVariant: DynamicSchemeVariant.fidelity));
 
-  static ThemeData _base(ColorScheme scheme) => ThemeData(
+  static ThemeData _base(ColorScheme scheme) {
+    final base = _theme(scheme);
+    // texto das etiquetas com a fonte e a cor do tema (sem isso some ou troca de fonte em alguns celulares)
+    return base.copyWith(
+      chipTheme: base.chipTheme.copyWith(labelStyle: base.textTheme.labelLarge?.copyWith(color: scheme.onSurface)),
+    );
+  }
+
+  static ThemeData _theme(ColorScheme scheme) => ThemeData(
         colorScheme: scheme,
         useMaterial3: true,
         appBarTheme: AppBarTheme(centerTitle: false, backgroundColor: scheme.surface, scrolledUnderElevation: 1),
@@ -32,7 +43,10 @@ class AppTheme {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
-        // texto das etiquetas com cor explícita (em alguns celulares sumia no tema padrão)
-        chipTheme: ChipThemeData(labelStyle: TextStyle(color: scheme.onSurface)),
+        navigationBarTheme: NavigationBarThemeData(
+          indicatorColor: scheme.primaryContainer,
+          iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
+              color: states.contains(WidgetState.selected) ? scheme.onPrimaryContainer : scheme.onSurfaceVariant)),
+        ),
       );
 }

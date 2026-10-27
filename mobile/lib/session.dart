@@ -7,7 +7,7 @@ import 'models.dart';
 
 enum SessionState { restoring, offline, signedOut, signedIn, blocked }
 
-/// Login (cliente ou equipe). O JWT fica no Keychain (iOS) / Keystore (Android) — a senha nunca é guardada.
+/// Login (cliente, equipe de uma loja ou admin da plataforma). O JWT fica no Keychain (iOS) / Keystore (Android) — a senha nunca é guardada.
 /// Ao abrir o app o token é renovado (sessão deslizante de 24h); vencido, a pessoa entra de novo.
 class Session extends ChangeNotifier {
   Session({http.Client? httpClient}) : _httpClient = httpClient;
@@ -55,8 +55,14 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> login(String email, String password) async {
-    await _authenticate(api.post('/api/auth/login', {'email': email.trim(), 'password': password}));
+  /// Com a verificação em duas etapas ligada, a primeira tentativa sem [code] lança [ApiException] com
+  /// `code == 'TOTP_REQUIRED'` (a tela então pede o código do autenticador).
+  Future<void> login(String email, String password, {String? code}) async {
+    await _authenticate(api.post('/api/auth/login', {
+      'email': email.trim(),
+      'password': password,
+      if (code != null && code.trim().isNotEmpty) 'code': code.trim(),
+    }));
     lastEmail = email.trim();
     await _storage.write(key: _emailKey, value: lastEmail);
   }
@@ -70,6 +76,31 @@ class Session extends ChangeNotifier {
     }));
     lastEmail = email.trim();
     await _storage.write(key: _emailKey, value: lastEmail);
+  }
+
+  /// Lojista abre a loja na plataforma e entra como dono.
+  Future<void> registerStore({
+    required String storeName,
+    required String slug,
+    required String ownerName,
+    required String email,
+    required String password,
+  }) async {
+    await _authenticate(api.post('/api/auth/register-store', {
+      'storeName': storeName.trim(),
+      'slug': slug.trim(),
+      'ownerName': ownerName.trim(),
+      'email': email.trim(),
+      'password': password,
+    }));
+    lastEmail = email.trim();
+    await _storage.write(key: _emailKey, value: lastEmail);
+  }
+
+  /// Dados da conta de novo (ex.: depois de ligar a verificação em duas etapas).
+  Future<void> reloadUser() async {
+    _user = User.fromJson(await api.get('/api/me') as Map<String, dynamic>);
+    notifyListeners();
   }
 
   /// Troca a senha: as outras sessões caem e este aparelho recebe um token novo.

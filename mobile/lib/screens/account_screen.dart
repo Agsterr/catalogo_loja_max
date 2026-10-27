@@ -7,6 +7,7 @@ import '../models.dart';
 import '../push.dart';
 import '../widgets/common.dart';
 import 'login_screen.dart';
+import 'security_screens.dart';
 
 /// Conta: dados, senha, avisos de promoção, sair (deste ou de todos os aparelhos) e excluir conta.
 class AccountScreen extends StatefulWidget {
@@ -23,8 +24,14 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_store == null) {
-      AppScope.of(context).session.api.get('/api/public/store').then((j) {
+    final scope = AppScope.of(context);
+    final path = scope.session.user?.isTeam ?? false
+        ? '/api/store/settings'
+        : scope.store.slug == null
+            ? null
+            : scope.store.publicBase;
+    if (_store == null && path != null) {
+      scope.session.api.get(path).then((j) {
         if (mounted) setState(() => _store = StoreInfo.fromJson(j as Map<String, dynamic>));
       }).catchError((Object _) {});
     }
@@ -134,7 +141,10 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: AppScope.of(context).session, builder: (context, _) => _build(context));
+
+  Widget _build(BuildContext context) {
     final session = AppScope.of(context).session;
     final user = session.user;
     final store = _store;
@@ -158,6 +168,17 @@ class _AccountScreenState extends State<AccountScreen> {
             onTap: _editProfile,
           ),
           ListTile(leading: const Icon(Icons.lock_rounded), title: const Text('Trocar senha'), onTap: _changePassword),
+          ListTile(
+            leading: Icon(user.twoFactorEnabled ? Icons.verified_user_rounded : Icons.shield_outlined),
+            title: const Text('Verificação em duas etapas'),
+            subtitle: Text(user.twoFactorEnabled ? 'Ligada' : user.isTeam ? 'Recomendado para a equipe' : 'Desligada'),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TwoFactorScreen(session: session))),
+          ),
+          ListTile(
+            leading: const Icon(Icons.history_rounded),
+            title: const Text('Acessos da conta'),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SecurityEventsScreen(api: session.api))),
+          ),
           if (!user.isTeam && Push.configured)
             SwitchListTile(
               secondary: const Icon(Icons.local_offer_rounded),

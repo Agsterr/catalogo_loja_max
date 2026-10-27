@@ -6,12 +6,27 @@ DateTime _dt(Object? v) => DateTime.parse(v as String);
 List<T> _list<T>(Object? v, T Function(Map<String, dynamic>) f) =>
     (v as List? ?? const []).map((e) => f(e as Map<String, dynamic>)).toList();
 
-enum Role { owner, staff, customer }
+enum Role { owner, staff, customer, platformAdmin }
 
-Role _role(String v) => switch (v) { 'OWNER' => Role.owner, 'STAFF' => Role.staff, _ => Role.customer };
+Role _role(String v) => switch (v) {
+      'OWNER' => Role.owner,
+      'STAFF' => Role.staff,
+      'PLATFORM_ADMIN' => Role.platformAdmin,
+      _ => Role.customer,
+    };
 
 class User {
-  const User({required this.id, required this.name, required this.email, this.phone, required this.role});
+  const User({
+    required this.id,
+    required this.name,
+    required this.email,
+    this.phone,
+    required this.role,
+    this.storeSlug,
+    this.storeName,
+    this.twoFactorEnabled = false,
+    this.blocked = false,
+  });
 
   final int id;
   final String name;
@@ -19,8 +34,15 @@ class User {
   final String? phone;
   final Role role;
 
+  /// Loja da equipe (nulo para cliente e admin da plataforma).
+  final String? storeSlug;
+  final String? storeName;
+  final bool twoFactorEnabled;
+  final bool blocked;
+
   bool get isTeam => role == Role.owner || role == Role.staff;
   bool get isOwner => role == Role.owner;
+  bool get isPlatformAdmin => role == Role.platformAdmin;
 
   factory User.fromJson(Map<String, dynamic> j) => User(
         id: j['id'] as int,
@@ -28,7 +50,25 @@ class User {
         email: j['email'] as String,
         phone: j['phone'] as String?,
         role: _role(j['role'] as String),
+        storeSlug: j['storeSlug'] as String?,
+        storeName: j['storeName'] as String?,
+        twoFactorEnabled: j['twoFactorEnabled'] as bool? ?? false,
+        blocked: j['blocked'] as bool? ?? false,
       );
+}
+
+/// Loja na busca do app do cliente.
+class StoreCard {
+  const StoreCard({required this.slug, required this.name, this.instagram});
+
+  final String slug;
+  final String name;
+  final String? instagram;
+
+  Map<String, dynamic> toJson() => {'slug': slug, 'name': name, 'instagram': instagram};
+
+  factory StoreCard.fromJson(Map<String, dynamic> j) =>
+      StoreCard(slug: j['slug'] as String, name: j['name'] as String, instagram: j['instagram'] as String?);
 }
 
 /// Seções da loja.
@@ -230,6 +270,7 @@ class Product {
 
 class StoreInfo {
   const StoreInfo({
+    required this.slug,
     required this.name,
     this.whatsapp,
     this.instagram,
@@ -240,6 +281,7 @@ class StoreInfo {
     this.freeDeliveryFrom,
   });
 
+  final String slug;
   final String name;
   final String? whatsapp;
   final String? instagram;
@@ -250,6 +292,7 @@ class StoreInfo {
   final double? freeDeliveryFrom;
 
   factory StoreInfo.fromJson(Map<String, dynamic> j) => StoreInfo(
+        slug: j['slug'] as String,
         name: j['name'] as String,
         whatsapp: j['whatsapp'] as String?,
         instagram: j['instagram'] as String?,
@@ -407,6 +450,7 @@ class Order {
     this.customer,
     required this.items,
     required this.events,
+    this.storeSlug,
   });
 
   final int id;
@@ -431,7 +475,11 @@ class Order {
   final List<OrderItem> items;
   final List<OrderEvent> events;
 
-  factory Order.fromJson(Map<String, dynamic> j) => Order(
+  /// Loja do pedido (o app sabe por onde comprou).
+  final String? storeSlug;
+
+  factory Order.fromJson(Map<String, dynamic> j, {String? storeSlug}) => Order(
+        storeSlug: storeSlug,
         id: j['id'] as int,
         code: j['code'] as String,
         status: OrderStatus.of(j['status'] as String),
@@ -464,6 +512,8 @@ class AppNotification {
     required this.message,
     required this.createdAt,
     required this.read,
+    this.storeSlug,
+    this.storeName,
   });
 
   final int id;
@@ -475,6 +525,10 @@ class AppNotification {
   final DateTime createdAt;
   final bool read;
 
+  /// Loja do aviso (o cliente recebe de todas em que comprou).
+  final String? storeSlug;
+  final String? storeName;
+
   factory AppNotification.fromJson(Map<String, dynamic> j) => AppNotification(
         id: j['id'] as int,
         type: j['type'] as String,
@@ -484,16 +538,71 @@ class AppNotification {
         message: j['message'] as String,
         createdAt: _dt(j['createdAt']),
         read: j['read'] as bool,
+        storeSlug: j['storeSlug'] as String?,
+        storeName: j['storeName'] as String?,
       );
 }
 
+/// Uma página do sino; [unread] conta todos os não lidos.
 class Inbox {
-  const Inbox(this.unread, this.items);
+  const Inbox(this.unread, this.items, {this.hasMore = false});
 
   final int unread;
   final List<AppNotification> items;
+  final bool hasMore;
 
-  factory Inbox.fromJson(Map<String, dynamic> j) => Inbox((j['unread'] as num).toInt(), _list(j['items'], AppNotification.fromJson));
+  factory Inbox.fromJson(Map<String, dynamic> j) => Inbox(
+        (j['unread'] as num).toInt(),
+        _list(j['items'], AppNotification.fromJson),
+        hasMore: j['hasMore'] as bool? ?? false,
+      );
+}
+
+/// Evento de auditoria (acessos da conta / ações da equipe).
+class SecurityEvent {
+  const SecurityEvent({required this.type, this.userName, this.detail, this.ip, required this.createdAt});
+
+  final String type;
+  final String? userName;
+  final String? detail;
+  final String? ip;
+  final DateTime createdAt;
+
+  static const labels = {
+    'LOGIN': 'Entrou',
+    'LOGIN_FAILED': 'Tentativa de entrada errada',
+    'LOGIN_LOCKED': 'Login travado por tentativas erradas',
+    'PASSWORD_CHANGED': 'Senha trocada',
+    'PASSWORD_RESET': 'Senha redefinida pelo e-mail',
+    'LOGOUT_ALL': 'Saiu de todos os aparelhos',
+    'TWO_FACTOR_ON': 'Verificação em duas etapas ligada',
+    'TWO_FACTOR_OFF': 'Verificação em duas etapas desligada',
+    'ACCOUNT_DELETED': 'Conta excluída',
+    'CUSTOMER_BLOCKED': 'Cliente bloqueado',
+    'CUSTOMER_UNBLOCKED': 'Cliente desbloqueado',
+    'STAFF_CREATED': 'Funcionário criado',
+    'STAFF_REMOVED': 'Funcionário removido',
+    'STORE_CREATED': 'Loja criada',
+    'STORE_SETTINGS': 'Dados da loja alterados',
+    'STORE_BLOCKED': 'Loja bloqueada pela plataforma',
+    'STORE_UNBLOCKED': 'Loja desbloqueada',
+    'USER_BLOCKED': 'Conta bloqueada pela plataforma',
+    'USER_UNBLOCKED': 'Conta desbloqueada',
+    'PRODUCT_DELETED': 'Produto excluído',
+    'PROMOTION_SAVED': 'Promoção salva',
+  };
+
+  String get label => labels[type] ?? type;
+
+  bool get alarming => type == 'LOGIN_FAILED' || type == 'LOGIN_LOCKED' || type.endsWith('BLOCKED');
+
+  factory SecurityEvent.fromJson(Map<String, dynamic> j) => SecurityEvent(
+        type: j['type'] as String,
+        userName: j['userName'] as String?,
+        detail: j['detail'] as String?,
+        ip: j['ip'] as String?,
+        createdAt: _dt(j['createdAt']),
+      );
 }
 
 class Promotion {

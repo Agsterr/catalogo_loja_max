@@ -1,7 +1,8 @@
 # App Loja Max (Flutter)
 
-Um app só para os dois públicos: quem entra como **cliente** (ou sem conta) vê a vitrine, o carrinho e os pedidos;
-quem entra com uma conta da **equipe** (dono/funcionário) cai na gestão da loja. Estado só com `ChangeNotifier`
+Um app só para todos: o **cliente** (com ou sem conta) escolhe a loja e vê vitrine, carrinho e pedidos; a **equipe**
+(dono/funcionário) cai na gestão da loja dela; o **admin da plataforma**, no painel de lojas e contas. Lojista novo abre
+a loja pelo próprio app ("Tenho uma loja"). Estado só com `ChangeNotifier`
 (sessão e carrinho) e `StatefulWidget`, sem frameworks extras.
 
 ```bash
@@ -14,6 +15,7 @@ flutter analyze && flutter test
 |---|---|
 | `API_URL` | URL da API (em produção **HTTPS**; o release do Android recusa HTTP) |
 | `SUPPORT_EMAIL` | contato mostrado na tela de conta bloqueada |
+| `STORE_SLUG` | app de **uma loja só** (com a marca do lojista): abre direto nela e esconde a troca de loja |
 | `FIREBASE_API_KEY`, `FIREBASE_APP_ID`, `FIREBASE_SENDER_ID`, `FIREBASE_PROJECT_ID` | push (veja `../docs/PUSH.md`) |
 
 ## Avisos
@@ -21,12 +23,18 @@ flutter analyze && flutter test
 - `lib/background.dart`: Workmanager confere o sino a cada 15 min (1 h com push) e mostra o que for novo.
 - `lib/notifications.dart`: canais `pedidos` e `promocoes` e notificações locais.
 
+## Imagens das telas
+`flutter test screenshots/telas_test.dart` gera `../docs/telas/*.png` com dados de exemplo (API simulada; as fotos
+dos produtos são as ilustrações de `screenshots/fotos`).
+
 ## Pastas
 ```
 lib/
 ├── main.dart, app_scope.dart, session.dart, cart.dart, api_client.dart, models.dart
-├── screens/   vitrine, produto, carrinho/fechar pedido, pedidos, avisos, conta, login
-└── store/     gestão: pedidos, produtos (fotos e estoque), promoções, resumo, clientes, equipe, dados da loja
+├── screens/   escolher loja, vitrine, produto, carrinho/fechar pedido, pedidos, avisos, conta, login,
+│              abrir loja, duas etapas, acessos da conta
+├── store/     gestão: pedidos, produtos (fotos e estoque), promoções, resumo, clientes, equipe, dados, auditoria
+└── platform/  admin da plataforma: lojas e contas
 ```
 
 ## Release Android

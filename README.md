@@ -1,57 +1,77 @@
-# Loja Max — vendas de roupas, calçados e bijuterias
+# Loja Max — plataforma de vendas de roupas, calçados e bijuterias
 
-Loja virtual com **API Spring** e **app Flutter**, no mesmo padrão do [Gerenciamento Max](https://github.com/Agsterr/Gerenciamento_Max):
-mesmos avisos (sino + push do Firebase com fila, novas tentativas e confirmação), fotos no **Cloudflare R2**
-e as mesmas regras de segurança (JWT, bloqueio que vale na hora, limite de tentativas).
+Plataforma **multi-loja** com **API Spring** e **app Flutter**, no mesmo padrão do [Gerenciamento Max](https://github.com/Agsterr/Gerenciamento_Max):
+cada lojista abre a loja pelo app, o cliente tem **uma conta para todas as lojas**, e os dados de cada loja ficam
+isolados (`tenant_id` filtrado pelo Hibernate). Avisos iguais aos do Gerenciamento (sino + push do Firebase com fila,
+novas tentativas e confirmação), fotos no **Cloudflare R2** e segurança reforçada (2 etapas, auditoria, bloqueios na hora).
 
 | | |
 |---|---|
-| **API** (`backend/`) | Java 21 · Spring Boot 3.5 · Spring Security (JWT HS256) · JPA/Hibernate · Flyway · PostgreSQL |
-| **App** (`mobile/`) | Flutter · um app só: vitrine para clientes e gestão para a equipe (abre conforme quem entra) |
+| **API** (`backend/`) | Java 21 · Spring Boot 3.5 · Spring Security (JWT HS256) · JPA/Hibernate (multi-tenant) · Flyway · PostgreSQL |
+| **App** (`mobile/`) | Flutter · um app só: vitrine para clientes, gestão para a equipe da loja, painel do admin da plataforma |
+
+## Telas
+
+| | | |
+|---|---|---|
+| ![Escolher loja](docs/telas/01-escolher-loja.png) | ![Vitrine](docs/telas/02-vitrine.png) | ![Produto](docs/telas/03-produto.png) |
+| ![Carrinho](docs/telas/04-carrinho.png) | ![Pedido](docs/telas/05-pedido-cliente.png) | ![Gestão: pedidos](docs/telas/07-gestao-pedidos.png) |
+| ![Gestão: pedido](docs/telas/08-gestao-pedido.png) | ![Gestão: produto](docs/telas/09-gestao-produto.png) | ![Resumo de vendas](docs/telas/10-resumo-vendas.png) |
+
+Geradas pelo próprio Flutter com dados de exemplo: `cd mobile && flutter test screenshots/telas_test.dart`
+(as fotos dos produtos ali são ilustrações; no app real são as fotos que a loja envia).
 
 ## Funcionalidades
 
-**Cliente (app)**
-- Vitrine por departamento (**Roupas, Calçados, Bijuterias**), categorias, busca, ordenação e filtro de promoções — dá para olhar sem conta.
-- Produto com fotos, preço "de/por", **tamanho/cor com estoque próprio** ("Só restam 2!") e **"Avise-me quando chegar"** para o que esgotou.
-- Carrinho guardado no celular; pedido com **retirada na loja** ou **entrega** (taxa e frete grátis a partir de X), pagamento Pix/cartão/dinheiro na entrega.
-- Acompanhamento do pedido com linha do tempo; cancelar enquanto a loja não separou.
-- Avisos: pedido recebido/confirmado/pronto/saiu para entrega/entregue/cancelado, pagamento confirmado, produto que voltou e promoções.
-- Conta: dados, trocar senha, "sair de todos os aparelhos", desligar avisos de promoção e **excluir conta** (exigência das lojas / LGPD).
+**Cliente**
+- Busca a loja (ou abre direto no app de uma loja só — `--dart-define=STORE_SLUG=...`).
+- Vitrine por departamento (**Roupas, Calçados, Bijuterias**), categorias, busca, ordenação e filtro de promoções — sem precisar de conta.
+- Produto com fotos, preço "de/por", **tamanho/cor com estoque próprio** e **"Avise-me quando chegar"**.
+- Carrinho guardado no celular (de uma loja por vez); **retirada** ou **entrega** (taxa e frete grátis a partir de X); pagamento Pix/cartão/dinheiro.
+- Pedido com linha do tempo; cancelar enquanto a loja não separou.
+- Avisos de todas as lojas em que comprou; promoções das lojas que segue.
+- Conta: dados, senha, **verificação em duas etapas**, **acessos da conta**, sair de todos os aparelhos, excluir conta.
 
 **Loja (mesmo app, login da equipe)**
-- Pedidos em aberto/por status, busca por código ou cliente, avançar status, marcar pago, WhatsApp do cliente.
-- Produtos com tamanhos/cores, **fotos pela câmera/galeria** (comprimidas e gravadas no R2), entrada/contagem/perda de estoque com histórico.
-- Promoções por período (% na loja toda, departamento, categoria ou produto) com **push para os clientes quando começa**.
-- Dono: resumo de vendas (faturamento, recebido, ticket médio, mais vendidos, estoque baixo), equipe, dados da loja, bloqueio de clientes.
+- Lojista abre a loja pelo app ("Tenho uma loja") e vira o dono; cadastra funcionários.
+- Pedidos em aberto/por status, avançar status, marcar pago, WhatsApp do cliente.
+- Produtos com tamanhos/cores, **fotos pela câmera/galeria** (R2), entrada/contagem/perda de estoque com histórico paginado.
+- Promoções por período com **push para os clientes quando começa**.
+- Dono: resumo de vendas (faturamento, recebido, ticket médio, clientes novos, descontos, gráfico por dia, mais vendidos,
+  estoque baixo), equipe, dados da loja, **bloqueio de cliente só na loja dele** e **auditoria**.
+
+**Administrador da plataforma**: lista lojas e contas, bloqueia/desbloqueia (vale na hora) e desliga a verificação em
+duas etapas de quem perdeu o celular.
+
+## Multi-loja (multi-tenant)
+- Banco compartilhado com **coluna `tenant_id`** em catálogo, estoque, fotos, pedidos e promoções. As entidades estendem
+  `TenantEntity` (`@TenantId`): o Hibernate **filtra e preenche a loja em toda consulta** — não dá para esquecer o `where`.
+- A loja da requisição vem do claim `tenant` do JWT (equipe) ou do endereço na URL `/api/public/stores/{slug}` e
+  `/api/stores/{slug}` (cliente). Loja bloqueada some da vitrine e a equipe dela é barrada.
+- Consultas em SQL puro (relatório, clientes, auditoria) filtram `tenant_id` explicitamente.
+- Teste `storesNeverSeeEachOthersData`: a loja B não lê nem altera produto, pedido, estoque, avisos ou clientes da A.
 
 ## Eventos e avisos (igual ao Gerenciamento Max)
 
-Os serviços publicam eventos da loja (`event/StoreEvents`); um ouvinte na **mesma transação** grava o aviso do sino e
-coloca o push na fila (`push_outbox`). O worker entrega pelo Firebase (FCM HTTP v1), tenta de novo com espera
-crescente (1 min, 5 min, 30 min, 2 h) e o app confirma o recebimento (`/api/push/ack`). Sem Firebase, o app confere o
-sino em segundo plano (15 min) e mostra notificação local. Detalhes em [docs/PUSH.md](docs/PUSH.md).
+Os serviços publicam eventos (`event/StoreEvents`); um ouvinte na **mesma transação** grava o aviso do sino e coloca o
+push na fila (`push_outbox`). O worker entrega pelo Firebase (FCM HTTP v1) com novas tentativas (1 min, 5 min, 30 min,
+2 h) e o app confirma o recebimento. Sem Firebase, o app confere o sino em segundo plano. Detalhes em [docs/PUSH.md](docs/PUSH.md).
 
 | Evento | Quem recebe |
 |---|---|
-| Pedido novo | equipe (e "pedido recebido" para o cliente) |
-| Cliente cancelou | equipe |
-| Tamanho/cor no estoque mínimo ou esgotado | equipe |
+| Pedido novo | equipe da loja (e "pedido recebido" para o cliente) |
+| Cliente cancelou | equipe da loja |
+| Tamanho/cor no estoque mínimo ou esgotado | equipe da loja |
 | Pedido confirmado / pronto / saiu / entregue / cancelado pela loja | cliente |
 | Pagamento confirmado | cliente |
 | Tamanho esgotado voltou ao estoque | clientes que pediram "avise-me" |
-| Promoção começou | todos os celulares que aceitam promoções (com ou sem login) |
+| Promoção começou | celulares que seguem a loja e aceitam promoções (com ou sem login) |
 
 ## Rodando
 
 ```bash
-# banco + API (cria o dono com STORE_OWNER_EMAIL/STORE_OWNER_PASSWORD)
-docker compose up --build            # API em http://localhost:8080
+docker compose up --build            # banco + API em http://localhost:8080 (cria o admin da plataforma)
 
-# ou local: PostgreSQL com banco/usuário/senha loja/loja
-cd backend && mvn spring-boot:run
-
-# app (emulador Android: 10.0.2.2 = localhost da sua máquina)
 cd mobile && flutter pub get && flutter run --dart-define=API_URL=http://10.0.2.2:8080
 ```
 
@@ -61,45 +81,47 @@ createdb -O loja loja_test
 cd backend && mvn test           # TEST_DB_URL, DB_USER e DB_PASSWORD são configuráveis
 cd mobile && flutter analyze && flutter test
 ```
+No GitHub: CI (API com PostgreSQL, app e APK), **CodeQL** (análise de segurança do código) e **Dependabot** (atualizações).
 
 ## Arquitetura
 
 ```
 backend/src/main/java/com/max/loja
-├── shared/        erros (ProblemDetail), paginação, limite de tentativas, relógio da loja
-├── security/      JWT, filtro de status da conta (bloqueio / token revogado), regras de acesso
-├── auth/          cadastro, login com trava, recuperar senha por código, equipe, exclusão de conta
+├── shared/        tenant (TenantContext, @TenantId), erros (ProblemDetail), paginação, limite de tentativas
+├── security/      JWT, filtros de status da conta e de tenant, TOTP, cifra de segredos, auditoria
+├── auth/          cadastro (cliente e loja), login com trava e 2 etapas, senha, equipe, exclusão de conta
+├── store/         lojas (o tenant), busca de lojas, dados da loja, tenant pelo endereço na URL
+├── platform/      administração da plataforma (lojas e contas)
 ├── catalog/       departamentos, categorias, produtos, tamanhos/cores, estoque
 ├── media/         fotos: compressão (ImageIO) + Cloudflare R2 (assinatura S3 V4) ou disco
-├── promotion/     promoções e preço final (PricingService)
+├── promotion/     promoções, preço final e aviso quando começam
 ├── order/         pedidos, itens, linha do tempo
 ├── event/         eventos da loja
 ├── notification/  sino + ouvinte dos eventos + "avise-me"
-├── push/          dispositivos, fila de push, worker e envio pelo FCM
-├── store/         dados da loja (retirada, entrega, frete)
-└── report/        resumo de vendas
+├── push/          dispositivos, lojas seguidas, fila de push, worker e envio pelo FCM
+└── report/        resumo de vendas (agregado no PostgreSQL)
 ```
 
 ### Principais endpoints
 | Método | Rota | Quem |
 |---|---|---|
-| POST | `/api/auth/register` · `/login` · `/forgot-password` · `/reset-password` | público |
-| GET | `/api/public/store` · `/categories` · `/products?department=&categoryId=&q=&onSale=&sort=&page=` · `/products/{id}` · `/promotions` | público |
-| POST | `/api/public/push/register` (celular sem login: só promoções) · `/api/push/ack` | público |
-| GET · PUT · POST | `/api/me` · `/api/me/token` · `/password` · `/logout-all` · `/delete` · `/push-token[/remove]` · `/push-preferences` · `/watches/{productId}` | logado |
-| GET · POST | `/api/notifications` · `/read` · `/{id}/read` | logado |
-| POST · GET | `/api/orders` · `/api/orders/{id}` · `/{id}/cancel` | cliente |
-| GET · POST · PUT · DELETE | `/api/store/products[/{id}]` · `/products/{id}/photos` · `/photos/{id}` · `/variants/{id}/stock` · `/stock/low` · `/categories` | equipe |
-| GET · POST | `/api/store/orders?status=&open=&q=` · `/{id}/status` · `/{id}/paid` · `/api/store/customers` | equipe |
-| GET · POST · PUT · DELETE | `/api/store/promotions` · `/api/store/reports/summary` · `/api/store/users` · `PUT /api/store/settings` · bloquear cliente | dono |
+| POST | `/api/auth/register` (cliente) · `/register-store` (lojista) · `/login` (`code` com 2 etapas) · `/forgot-password` · `/reset-password` | público |
+| GET | `/api/public/stores?q=` · `/api/public/stores/{slug}` · `/categories` · `/products?department=&categoryId=&q=&onSale=&sort=&page=` · `/products/{id}` · `/promotions` | público |
+| POST | `/api/public/stores/{slug}/push` (celular segue a loja) · `/api/push/ack` | público |
+| GET · PUT · POST | `/api/me` · `/token` · `/password` · `/logout-all` · `/delete` · `/2fa/setup·enable·disable` · `/security-events` · `/push-token` · `/watches/{productId}` | logado |
+| GET · POST | `/api/notifications?page=` · `/read` · `/{id}/read` | logado |
+| POST · GET | `/api/stores/{slug}/orders` · `/{id}` · `/{id}/cancel` | cliente |
+| GET · POST · PUT · DELETE | `/api/store/products[/{id}]` · `/photos` · `/variants/{id}/stock?page=` · `/stock/low` · `/categories` · `/orders` · `/customers` | equipe |
+| GET · POST · PUT | `/api/store/promotions` · `/reports/summary` · `/users` · `/settings` · `/audit` · bloquear cliente | dono |
+| GET · POST | `/api/platform/stores` · `/stores/{id}/block·unblock` · `/users` · `/users/{id}/block·unblock·reset-2fa` | admin da plataforma |
+
+Listas que crescem são paginadas (`page`, `size` até 100; resposta com `items`, `total` e `hasMore`): vitrine, busca de
+lojas, produtos, pedidos, clientes, sino, histórico de estoque, auditoria e as listas da plataforma.
 
 ## Segurança
-Resumo em [docs/SEGURANCA.md](docs/SEGURANCA.md): senha forte com BCrypt, JWT com emissor e versão (troca de senha,
-bloqueio e "sair de todos" derrubam tokens já emitidos), trava de login por e-mail, limite por IP, preço e estoque
-sempre calculados no servidor, cliente só vê os próprios pedidos, fotos conferidas pelo conteúdo e recomprimidas
-(sem EXIF/GPS), erros sem detalhes internos, headers de segurança e segredos só em variáveis de ambiente.
+Resumo em [docs/SEGURANCA.md](docs/SEGURANCA.md).
 
 ## Variáveis de ambiente (API)
-Veja [.env.example](.env.example). As principais: `DB_URL`/`DB_USER`/`DB_PASSWORD`, `JWT_SECRET` (≥ 32 caracteres),
-`STORE_OWNER_EMAIL`/`STORE_OWNER_PASSWORD`, `APP_PUBLIC_URL`, `CORS_ORIGINS`, `R2_*` ([docs/FOTOS_R2.md](docs/FOTOS_R2.md)),
+Veja [.env.example](.env.example): `DB_*`, `JWT_SECRET` (≥ 32), `APP_ENCRYPTION_KEY`, `PLATFORM_ADMIN_EMAIL`/`PASSWORD`,
+`APP_PUBLIC_URL`, `CORS_ORIGINS`, `R2_*` ([docs/FOTOS_R2.md](docs/FOTOS_R2.md)),
 `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64` ([docs/PUSH.md](docs/PUSH.md)), `RESEND_API_KEY`/`MAIL_FROM`, `APP_TIMEZONE`.

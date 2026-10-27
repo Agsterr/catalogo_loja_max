@@ -316,7 +316,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                 controller: _salePrice,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [money],
-                decoration: const InputDecoration(labelText: 'Preço "por" (opcional)', prefixText: 'R\$ '),
+                decoration: const InputDecoration(labelText: 'Por (opcional)', prefixText: 'R\$ '),
                 validator: (v) {
                   if ((v ?? '').trim().isEmpty) return null;
                   final sale = _money(v!) ?? 0;

@@ -19,6 +19,7 @@ class CartScreen extends StatelessWidget {
       listenable: cart,
       builder: (context, _) => Scaffold(
         appBar: AppBar(title: Text(cart.isEmpty ? 'Carrinho' : 'Carrinho (${cart.count})')),
+        // o carrinho é de uma loja só (a que estava aberta quando a peça entrou)
         body: cart.isEmpty
             ? const EmptyState(icon: Icons.shopping_bag_outlined, text: 'Seu carrinho está vazio.\nEscolha algo na vitrine!')
             : ListView.separated(
@@ -64,7 +65,8 @@ class CartScreen extends StatelessWidget {
       builder: (_) => CheckoutSheet(api: session.api, cart: AppScope.of(context).cart),
     );
     if (order != null && context.mounted) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => OrderScreen(api: session.api, orderId: order.id)));
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => OrderScreen(api: session.api, orderId: order.id, slug: order.storeSlug)));
     }
   }
 }
@@ -136,7 +138,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
   @override
   void initState() {
     super.initState();
-    widget.api.get('/api/public/store').then((j) {
+    widget.api.get('/api/public/stores/${widget.cart.storeSlug}').then((j) {
       if (!mounted) return;
       final s = StoreInfo.fromJson(j as Map<String, dynamic>);
       setState(() {
@@ -169,7 +171,8 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
     }
     setState(() => _busy = true);
     try {
-      final json = await widget.api.post('/api/orders', {
+      final slug = widget.cart.storeSlug!;
+      final json = await widget.api.post('/api/stores/$slug/orders', {
         'items': [for (final i in widget.cart.items) {'variantId': i.variantId, 'quantity': i.quantity}],
         'deliveryMethod': _delivery ? 'DELIVERY' : 'PICKUP',
         'paymentMethod': _payment,
@@ -177,7 +180,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
         if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
       }) as Map<String, dynamic>;
       widget.cart.clear();
-      if (mounted) Navigator.pop(context, Order.fromJson(json));
+      if (mounted) Navigator.pop(context, Order.fromJson(json, storeSlug: slug));
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {

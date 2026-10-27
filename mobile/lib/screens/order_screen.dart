@@ -9,11 +9,14 @@ import '../widgets/common.dart';
 /// Pedido com itens, valores e linha do tempo. Com [team] mostra o cliente e as ações da loja
 /// (confirmar, pronto/saiu para entrega, entregue, cancelar, pago).
 class OrderScreen extends StatefulWidget {
-  const OrderScreen({super.key, required this.api, required this.orderId, this.team = false});
+  const OrderScreen({super.key, required this.api, required this.orderId, this.team = false, this.slug});
 
   final ApiClient api;
   final int orderId;
   final bool team;
+
+  /// Loja do pedido (cliente); a equipe usa a loja do login.
+  final String? slug;
 
   @override
   State<OrderScreen> createState() => _OrderScreenState();
@@ -24,7 +27,7 @@ class _OrderScreenState extends State<OrderScreen> {
   Object? _error;
   bool _busy = false;
 
-  String get _path => widget.team ? '/api/store/orders/${widget.orderId}' : '/api/orders/${widget.orderId}';
+  String get _path => widget.team ? '/api/store/orders/${widget.orderId}' : '/api/stores/${widget.slug}/orders/${widget.orderId}';
 
   @override
   void initState() {
@@ -84,7 +87,7 @@ class _OrderScreenState extends State<OrderScreen> {
   Future<void> _cancelMine() async {
     final reason = await _askReason('Cancelar seu pedido?');
     if (reason == null) return;
-    await _act(() => widget.api.post('/api/orders/${widget.orderId}/cancel', {'reason': reason}));
+    await _act(() => widget.api.post('$_path/cancel', {'reason': reason}));
   }
 
   @override
@@ -128,7 +131,7 @@ class _OrderScreenState extends State<OrderScreen> {
                   ),
                 const Divider(),
                 _line('Produtos', money(o.subtotal)),
-                if (o.discount > 0) _line('Você economizou', money(o.discount)),
+                if (o.discount > 0) _line(widget.team ? 'Descontos' : 'Você economizou', money(o.discount)),
                 if (o.delivery) _line('Entrega', o.deliveryFee == 0 ? 'Grátis' : money(o.deliveryFee)),
                 _line('Total', money(o.total), bold: true),
               ]),

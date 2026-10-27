@@ -75,8 +75,14 @@ class _ReportScreenState extends State<ReportScreen> {
                   _Stat('Pedidos', '${d['orders']}'),
                   _Stat('Ticket médio', money(d['averageTicket'] as num)),
                   _Stat('Peças vendidas', '${d['itemsSold']}'),
+                  _Stat('Clientes novos', '${d['newCustomers']}'),
+                  _Stat('Descontos dados', money(d['discounts'] as num)),
                   _Stat('Aguardando agora', '${d['pendingNow']}'),
                 ]),
+                const SizedBox(height: 20),
+                Text('Faturamento por dia', style: t.titleMedium),
+                const SizedBox(height: 8),
+                _DailyBars(days: (d['days'] as List).cast<Map<String, dynamic>>()),
                 const SizedBox(height: 20),
                 Text('Mais vendidos', style: t.titleMedium),
                 for (final p in (d['topProducts'] as List).cast<Map<String, dynamic>>())
@@ -115,7 +121,8 @@ class _Stat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 160,
+        // duas colunas que ocupam a largura toda (32 = margens da lista, 12 = espaço entre os cartões)
+        width: (MediaQuery.sizeOf(context).width - 32 - 12) / 2,
         child: Card(
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -127,4 +134,75 @@ class _Stat extends StatelessWidget {
           ),
         ),
       );
+}
+
+/// Barras do faturamento diário (uma série só: o título já diz o que é). Tocar numa barra mostra o dia e o valor.
+class _DailyBars extends StatefulWidget {
+  const _DailyBars({required this.days});
+
+  final List<Map<String, dynamic>> days;
+
+  @override
+  State<_DailyBars> createState() => _DailyBarsState();
+}
+
+class _DailyBarsState extends State<_DailyBars> {
+  int? _selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+    final days = widget.days;
+    if (days.isEmpty) {
+      return const Padding(padding: EdgeInsets.all(8), child: Text('Sem vendas no período.'));
+    }
+    final values = [for (final d in days) (d['revenue'] as num).toDouble()];
+    final max = values.reduce((a, b) => a > b ? a : b);
+    final sel = _selected;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+            sel == null
+                ? 'Maior dia: ${money(max)}'
+                : '${date(DateTime.parse(days[sel]['date'] as String))} · ${money(values[sel])} · ${days[sel]['orders']} pedidos',
+            style: t.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 140,
+            child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              for (var i = 0; i < days.length; i++)
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque, // a área de toque é a coluna toda, não só a barra
+                    onTap: () => setState(() => _selected = _selected == i ? null : i),
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 1), // 2px entre as barras
+                        height: max == 0 ? 2 : (values[i] / max * 136).clamp(2, 136),
+                        decoration: BoxDecoration(
+                          color: sel == null || sel == i ? scheme.primary : scheme.primary.withValues(alpha: 0.35),
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ]),
+          ),
+          Divider(height: 1, color: scheme.outlineVariant),
+          const SizedBox(height: 4),
+          Row(children: [
+            Text(date(DateTime.parse(days.first['date'] as String)), style: t.bodySmall),
+            const Spacer(),
+            Text(date(DateTime.parse(days.last['date'] as String)), style: t.bodySmall),
+          ]),
+        ]),
+      ),
+    );
+  }
 }

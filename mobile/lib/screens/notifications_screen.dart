@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../background.dart';
 import '../format.dart';
 import '../models.dart';
+import '../notifications.dart';
 import '../session.dart';
 import '../widgets/common.dart';
 
@@ -12,7 +13,7 @@ class NotificationsScreen extends StatefulWidget {
 
   final Session session;
 
-  /// Abre o que o aviso aponta ("order:12" / "product:5").
+  /// Abre o que o aviso aponta ("order:12@loja" / "product:5@loja").
   final void Function(String payload) onOpen;
 
   /// Contagem de não lidos (para o selo da aba).
@@ -25,6 +26,8 @@ class NotificationsScreen extends StatefulWidget {
 class NotificationsScreenState extends State<NotificationsScreen> {
   Inbox? _inbox;
   Object? _error;
+  int _page = 0;
+  bool _loadingMore = false;
 
   @override
   void initState() {
@@ -34,10 +37,11 @@ class NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> refresh() async {
     try {
-      final inbox = Inbox.fromJson(await widget.session.api.get('/api/notifications') as Map<String, dynamic>);
+      final inbox = Inbox.fromJson(await widget.session.api.get('/api/notifications?page=0') as Map<String, dynamic>);
       if (!mounted) return;
       setState(() {
         _inbox = inbox;
+        _page = 0;
         _error = null;
       });
       widget.onUnread?.call(inbox.unread);
@@ -45,6 +49,25 @@ class NotificationsScreenState extends State<NotificationsScreen> {
       if (inbox.items.isNotEmpty) await markNotified(inbox.items.first.id);
     } catch (e) {
       if (mounted) setState(() => _error = e);
+    }
+  }
+
+  /// Próxima página do sino (rolagem infinita).
+  Future<void> _more() async {
+    final inbox = _inbox;
+    if (inbox == null || !inbox.hasMore || _loadingMore) return;
+    _loadingMore = true;
+    try {
+      final next = Inbox.fromJson(await widget.session.api.get('/api/notifications?page=${_page + 1}') as Map<String, dynamic>);
+      if (!mounted) return;
+      setState(() {
+        _inbox = Inbox(next.unread, [...inbox.items, ...next.items], hasMore: next.hasMore);
+        _page++;
+      });
+    } catch (_) {
+      // tenta de novo ao rolar
+    } finally {
+      _loadingMore = false;
     }
   }
 
@@ -61,11 +84,8 @@ class NotificationsScreenState extends State<NotificationsScreen> {
     if (!n.read) {
       widget.session.api.post('/api/notifications/${n.id}/read').then((_) => refresh()).catchError((Object _) {});
     }
-    if (n.orderId != null) {
-      widget.onOpen('order:${n.orderId}');
-    } else if (n.productId != null) {
-      widget.onOpen('product:${n.productId}');
-    }
+    final payload = payloadFor(orderId: n.orderId, productId: n.productId, slug: n.storeSlug);
+    if (payload.isNotEmpty) widget.onOpen(payload);
   }
 
   @override
@@ -87,7 +107,12 @@ class NotificationsScreenState extends State<NotificationsScreen> {
                       SizedBox(height: 80),
                       EmptyState(icon: Icons.notifications_none_rounded, text: 'Nenhum aviso por enquanto.'),
                     ])
-                  : ListView.separated(
+                  : NotificationListener<ScrollNotification>(
+                      onNotification: (sn) {
+                        if (sn.metrics.pixels > sn.metrics.maxScrollExtent - 300) _more();
+                        return false;
+                      },
+                      child: ListView.separated(
                       itemCount: inbox.items.length,
                       separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (context, i) {
@@ -95,11 +120,15 @@ class NotificationsScreenState extends State<NotificationsScreen> {
                         return ListTile(
                           leading: CircleAvatar(child: Icon(_icon(n.type))),
                           title: Text(n.title, style: TextStyle(fontWeight: n.read ? FontWeight.normal : FontWeight.w700)),
-                          subtitle: Text('${n.message}\n${ago(n.createdAt)}'),
+                          subtitle: Text('${n.message}\n${[
+                            ago(n.createdAt),
+                            if (!(widget.session.user?.isTeam ?? false)) ?n.storeName,
+                          ].join(' · ')}'),
                           isThreeLine: true,
                           onTap: () => _open(n),
                         );
                       },
+                    ),
                     ),
             ),
     );

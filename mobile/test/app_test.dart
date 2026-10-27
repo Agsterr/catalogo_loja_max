@@ -8,6 +8,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:loja_max/api_client.dart';
 import 'package:loja_max/app_scope.dart';
 import 'package:loja_max/cart.dart';
+import 'package:loja_max/current_store.dart';
 import 'package:loja_max/format.dart';
 import 'package:loja_max/models.dart';
 import 'package:loja_max/notifications.dart';
@@ -62,16 +63,16 @@ ApiClient _api() => ApiClient(
       httpClient: MockClient((req) async {
         final path = req.url.path;
         Object body = switch (path) {
-          '/api/public/categories' => [],
-          '/api/public/promotions' => [],
-          '/api/public/products' => {
+          '/api/public/stores/moda/categories' => [],
+          '/api/public/stores/moda/promotions' => [],
+          '/api/public/stores/moda/products' => {
               'items': [_card(1, 'Tênis Runner', price: 200, finalPrice: 150, discount: 25), _card(2, 'Brinco Argola')],
               'page': 0,
               'size': 20,
               'total': 2,
               'hasMore': false,
             },
-          '/api/public/products/7' => _product(),
+          '/api/public/stores/moda/products/7' => _product(),
           _ => {'detail': 'Não encontrado.'},
         };
         return http.Response(jsonEncode(body), body is Map && body.containsKey('detail') ? 404 : 200,
@@ -80,7 +81,7 @@ ApiClient _api() => ApiClient(
     );
 
 Widget _app(Widget child, Cart cart) =>
-    AppScope(session: Session(), cart: cart, child: MaterialApp(home: child));
+    AppScope(session: Session(), cart: cart, store: CurrentStore(), child: MaterialApp(home: child));
 
 void main() {
   setUpAll(() => initializeDateFormatting('pt_BR'));
@@ -90,12 +91,18 @@ void main() {
     final cart = Cart();
     CartItem item(int qty) => CartItem(
         variantId: 1, productId: 1, name: 'Tênis', variant: '38', unitPrice: 99.9, quantity: qty, maxStock: 3);
-    cart.add(item(2));
-    cart.add(item(2));
+    cart.add(item(2), store: 'moda');
+    cart.add(item(2), store: 'moda');
     expect(cart.count, 3);
     expect(cart.subtotal, closeTo(299.7, 0.001));
+    // peça de outra loja: o carrinho troca (cada pedido é de uma loja)
+    expect(cart.fromOtherStore('outra'), isTrue);
+    cart.add(item(1), store: 'outra');
+    expect(cart.storeSlug, 'outra');
+    expect(cart.count, 1);
     cart.setQuantity(1, 0);
     expect(cart.isEmpty, isTrue);
+    expect(cart.storeSlug, isNull);
   });
 
   test('pedido da API vira modelo com linha do tempo', () {
@@ -134,17 +141,22 @@ void main() {
     expect(whatsappUri('(11) 99999-0000').toString(), 'https://wa.me/5511999990000');
     expect(passwordProblem('12345678'), isNotNull);
     expect(passwordProblem('Senha1234'), isNull);
-    expect(payloadFor(orderIdText: '12'), 'order:12');
+    expect(payloadFor(orderIdText: '12', slug: 'moda'), 'order:12@moda');
+    final target = parsePayload('product:5@moda-da-ana')!;
+    expect((target.kind, target.id, target.slug), ('product', 5, 'moda-da-ana'));
+    expect(parsePayload('order:3')!.slug, isNull);
+    expect(slugify('Moda da Ána & Cia'), 'moda-da-ana-cia');
     expect(LocalNotifications.idFor('a'), LocalNotifications.idFor('a'));
   });
 
   testWidgets('vitrine mostra produtos e preço de promoção', (tester) async {
-    await tester.pumpWidget(_app(CatalogScreen(api: _api()), Cart()));
+    await tester.pumpWidget(_app(CatalogScreen(api: _api(), slug: 'moda', storeName: 'Moda da Ana'), Cart()));
     await tester.pumpAndSettle();
     expect(find.text('Tênis Runner'), findsOneWidget);
     expect(find.text('Brinco Argola'), findsOneWidget);
     expect(find.text('-25%'), findsOneWidget);
     expect(find.text('Calçados'), findsOneWidget);
+    expect(find.text('Moda da Ana'), findsOneWidget);
   });
 
   testWidgets('produto: tamanho esgotado fica desligado e o disponível vai para o carrinho', (tester) async {
@@ -153,7 +165,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final cart = Cart();
-    await tester.pumpWidget(_app(ProductScreen(api: _api(), productId: 7), cart));
+    await tester.pumpWidget(_app(ProductScreen(api: _api(), slug: 'moda', productId: 7), cart));
     await tester.pumpAndSettle();
     expect(find.text('Vestido Midi'), findsOneWidget);
     expect(find.textContaining('25% off'), findsOneWidget);
@@ -163,5 +175,6 @@ void main() {
     expect(cart.count, 1);
     expect(cart.items.single.variant, 'M · Preto');
     expect(cart.items.single.unitPrice, 150);
+    expect(cart.storeSlug, 'moda');
   });
 }

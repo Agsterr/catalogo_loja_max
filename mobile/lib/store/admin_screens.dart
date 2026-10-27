@@ -107,7 +107,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   }
 }
 
-/// Clientes: busca, contato e bloqueio (dono) — bloqueado não entra nem faz pedidos.
+/// Clientes que compraram na loja: busca, contato e bloqueio (dono) — bloqueado não faz pedidos nesta loja.
 class CustomersScreen extends StatefulWidget {
   const CustomersScreen({super.key, required this.api, required this.canBlock});
 
@@ -185,9 +185,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
         itemBuilder: (context, c) => ListTile(
           leading: Icon(c['blocked'] == true ? Icons.block_rounded : Icons.person_rounded),
           title: Text(c['name'] as String),
-          subtitle: Text([c['email'], c['phone'], 'desde ${date(DateTime.parse(c['createdAt'] as String))}']
-              .whereType<String>()
-              .join(' · ')),
+          subtitle: Text([
+            c['email'],
+            c['phone'],
+            '${c['orders']} ${c['orders'] == 1 ? 'pedido' : 'pedidos'}',
+            if (c['blocked'] == true) 'bloqueado aqui',
+          ].whereType<String>().join(' · ')),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             if (c['phone'] != null)
               IconButton(
@@ -340,7 +343,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    widget.api.get('/api/public/store').then((j) {
+    widget.api.get('/api/store/settings').then((j) {
       final s = StoreInfo.fromJson(j as Map<String, dynamic>);
       if (!mounted) return;
       setState(() {

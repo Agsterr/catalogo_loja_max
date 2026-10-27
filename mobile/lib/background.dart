@@ -37,7 +37,7 @@ Future<int> notifyNewAlerts(ApiClient api, {bool viaPush = false}) async {
       key: 'aviso:${n.id}',
       title: n.title,
       body: n.message,
-      payload: payloadFor(orderId: n.orderId, productId: n.productId),
+      payload: payloadFor(orderId: n.orderId, productId: n.productId, slug: n.storeSlug),
       channel: n.type == 'BACK_IN_STOCK' ? Channels.promotions : Channels.orders,
     );
   }

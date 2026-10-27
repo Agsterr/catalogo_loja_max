@@ -114,11 +114,19 @@ class LocalNotifications {
   }
 }
 
-/// Payload de toque a partir dos dados do aviso ("order:12" / "product:5").
-String payloadFor({int? orderId, int? productId, String? orderIdText, String? productIdText}) {
+/// Payload de toque a partir dos dados do aviso ("order:12@loja" / "product:5@loja"; a loja vai depois do @).
+String payloadFor({int? orderId, int? productId, String? orderIdText, String? productIdText, String? slug}) {
   final o = orderId?.toString() ?? orderIdText;
   final p = productId?.toString() ?? productIdText;
-  if (o != null && o.isNotEmpty) return 'order:$o';
-  if (p != null && p.isNotEmpty) return 'product:$p';
+  final at = slug == null || slug.isEmpty ? '' : '@$slug';
+  if (o != null && o.isNotEmpty) return 'order:$o$at';
+  if (p != null && p.isNotEmpty) return 'product:$p$at';
   return '';
+}
+
+/// O que um payload aponta: tipo ("order"/"product"), id e loja (pode faltar).
+({String kind, int id, String? slug})? parsePayload(String payload) {
+  final m = RegExp(r'^(order|product):(\d+)(?:@([a-z0-9-]+))?$').firstMatch(payload);
+  if (m == null) return null;
+  return (kind: m.group(1)!, id: int.parse(m.group(2)!), slug: m.group(3));
 }

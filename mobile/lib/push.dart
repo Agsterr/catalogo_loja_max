@@ -8,7 +8,7 @@ import 'notifications.dart';
 import 'session.dart';
 
 /// Push pelo Firebase, igual ao Gerenciamento Max: o servidor avisa na hora (pedido novo, status do pedido,
-/// estoque baixo, promoção, produto que voltou), mesmo com o app fechado, e o app confirma o recebimento.
+/// estoque baixo, promoção das lojas que a pessoa segue, produto que voltou), mesmo com o app fechado, e o app confirma o recebimento.
 /// A configuração vem do build (`--dart-define=FIREBASE_*`); sem ela o app segue só com a consulta periódica
 /// em segundo plano (background.dart).
 class Push {
@@ -75,20 +75,32 @@ class Push {
     await register();
   }
 
-  /// Liga o celular à conta logada (ou, sem login, só às promoções).
+  static String? _following;
+
+  /// Liga o celular à conta logada (avisos dos pedidos / da loja da equipe) e à loja aberta (promoções).
   static Future<void> register() async {
     final session = _session;
     if (session == null) return;
     final token = await session.pushToken;
     if (token == null) return;
     try {
-      if (session.signedIn) {
-        await session.api.post('/api/me/push-token', {'token': token});
-      } else if (session.state == SessionState.signedOut) {
-        await ApiClient().post('/api/public/push/register', {'token': token});
-      }
+      if (session.signedIn) await session.api.post('/api/me/push-token', {'token': token});
     } catch (_) {
       // sem rede agora: tenta de novo na próxima abertura
+    }
+    final slug = _following;
+    if (slug != null) await follow(slug);
+  }
+
+  /// Cliente abriu a vitrine de uma loja: passa a receber as promoções dela (com ou sem login).
+  static Future<void> follow(String slug) async {
+    _following = slug;
+    final token = await _session?.pushToken;
+    if (token == null) return;
+    try {
+      await ApiClient().post('/api/public/stores/$slug/push', {'token': token});
+    } catch (_) {
+      // sem rede: segue na próxima abertura
     }
   }
 
@@ -103,7 +115,10 @@ class Push {
       ackPush(m.data['messageId'] as String?, await const FlutterSecureStorage().read(key: Session.pushKey));
 
   static String _payload(RemoteMessage m) =>
-      payloadFor(orderIdText: m.data['orderId'] as String?, productIdText: m.data['productId'] as String?);
+      payloadFor(
+          orderIdText: m.data['orderId'] as String?,
+          productIdText: m.data['productId'] as String?,
+          slug: m.data['slug'] as String?);
 
   static Future<void> _opened(RemoteMessage m) async {
     await _ack(m);

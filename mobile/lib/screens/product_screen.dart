@@ -10,9 +10,10 @@ import 'login_screen.dart';
 
 /// Produto: fotos, preço (com promoção), tamanhos/cores com estoque, carrinho e "avise-me quando chegar".
 class ProductScreen extends StatefulWidget {
-  const ProductScreen({super.key, required this.api, required this.productId});
+  const ProductScreen({super.key, required this.api, required this.slug, required this.productId});
 
   final ApiClient api;
+  final String slug;
   final int productId;
 
   @override
@@ -36,7 +37,7 @@ class _ProductScreenState extends State<ProductScreen> {
   Future<void> _load() async {
     setState(() => _error = null);
     try {
-      final p = Product.fromJson(await widget.api.get('/api/public/products/${widget.productId}') as Map<String, dynamic>);
+      final p = Product.fromJson(await widget.api.get('/api/public/stores/${widget.slug}/products/${widget.productId}') as Map<String, dynamic>);
       if (!mounted) return;
       final available = p.variants.where((v) => v.active && v.stock > 0).toList();
       setState(() {
@@ -78,14 +79,20 @@ class _ProductScreenState extends State<ProductScreen> {
     }
   }
 
-  void _addToCart(Cart cart) {
+  Future<void> _addToCart(Cart cart) async {
     final p = _product!;
     final v = _selected;
     if (v == null) {
       showInfo(context, 'Escolha o tamanho.');
       return;
     }
-    cart.add(CartItem(
+    if (cart.fromOtherStore(widget.slug) &&
+        !await confirm(context, 'Trocar o carrinho?', 'Seu carrinho tem peças de outra loja. Cada pedido é de uma loja só.',
+            ok: 'Trocar')) {
+      return;
+    }
+    if (!mounted) return;
+    cart.add(store: widget.slug, CartItem(
       variantId: v.id,
       productId: p.id,
       name: p.name,

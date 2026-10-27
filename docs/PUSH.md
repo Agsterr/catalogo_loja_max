@@ -14,9 +14,11 @@ mesmo com o app fechado (a consulta em segundo plano passa a ser só reserva, a 
    Parado há mais de 24 h vira `EXPIRED`; o que já terminou some depois de 30 dias.
 4. O app confirma o recebimento em `POST /api/push/ack` (`SENT` → `RECEIVED`), com o código do aviso e o do celular.
 
-Celulares: `POST /api/me/push-token` liga o celular à conta (equipe recebe os avisos da loja; cliente, os dele e
-promoções). Sem login o app usa `POST /api/public/push/register` (só promoções; não mexe em celular já ligado a uma
-conta). Ao sair, `POST /api/me/push-token/remove`. Promoções podem ser desligadas em *Conta* (`PUT /api/me/push-preferences`).
+Celulares: `POST /api/me/push-token` liga o celular à conta (equipe recebe os avisos da loja dela; cliente, os dos
+pedidos dele em qualquer loja). Ao abrir a vitrine de uma loja, o app chama `POST /api/public/stores/{slug}/push` e o
+celular passa a **seguir** aquela loja (recebe as promoções dela, com ou sem login; não mexe em celular já ligado a uma
+conta). Ao sair, `POST /api/me/push-token/remove`. Promoções podem ser desligadas em *Conta*
+(`PUT /api/me/push-preferences`). O aviso leva o endereço da loja (`slug`), e o app abre o pedido/produto na loja certa.
 
 Canais do Android: `pedidos` (pedidos e estoque) e `promocoes` (promoções e "chegou!").
 

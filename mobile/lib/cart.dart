@@ -50,12 +50,16 @@ class CartItem {
       );
 }
 
-/// Carrinho guardado no aparelho (sobrevive a fechar o app).
+/// Carrinho guardado no aparelho (sobrevive a fechar o app). É de uma loja só ([storeSlug]): o pedido vai
+/// para uma loja.
 class Cart extends ChangeNotifier {
-  static const _key = 'cart.v1';
+  static const _key = 'cart.v2';
   static const maxPerItem = 20;
 
   final List<CartItem> _items = [];
+
+  /// Loja dos itens (nulo = vazio).
+  String? storeSlug;
 
   List<CartItem> get items => List.unmodifiable(_items);
 
@@ -69,17 +73,26 @@ class Cart extends ChangeNotifier {
     try {
       final raw = (await SharedPreferences.getInstance()).getString(_key);
       if (raw == null) return;
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      storeSlug = json['store'] as String?;
       _items
         ..clear()
-        ..addAll((jsonDecode(raw) as List).map((e) => CartItem.fromJson(e as Map<String, dynamic>)));
+        ..addAll((json['items'] as List).map((e) => CartItem.fromJson(e as Map<String, dynamic>)));
       notifyListeners();
     } catch (_) {
       // carrinho antigo/corrompido: começa vazio
     }
   }
 
-  /// Soma ao que já tinha do mesmo tamanho/cor, sem passar do estoque.
-  void add(CartItem item) {
+  /// Tem itens de outra loja (adicionar aqui troca o carrinho).
+  bool fromOtherStore(String slug) => _items.isNotEmpty && storeSlug != slug;
+
+  /// Soma ao que já tinha do mesmo tamanho/cor, sem passar do estoque. Item de outra loja limpa o carrinho antes.
+  void add(CartItem item, {required String store}) {
+    if (storeSlug != store) {
+      _items.clear();
+      storeSlug = store;
+    }
     final existing = _items.where((i) => i.variantId == item.variantId).firstOrNull;
     final limit = item.maxStock.clamp(1, maxPerItem);
     if (existing != null) {
@@ -96,6 +109,7 @@ class Cart extends ChangeNotifier {
     if (item == null) return;
     if (quantity <= 0) {
       _items.remove(item);
+      if (_items.isEmpty) storeSlug = null;
     } else {
       item.quantity = quantity.clamp(1, item.maxStock.clamp(1, maxPerItem));
     }
@@ -104,13 +118,14 @@ class Cart extends ChangeNotifier {
 
   void clear() {
     _items.clear();
+    storeSlug = null;
     _changed();
   }
 
   void _changed() {
     notifyListeners();
     SharedPreferences.getInstance()
-        .then((p) => p.setString(_key, jsonEncode(_items.map((i) => i.toJson()).toList())))
+        .then((p) => p.setString(_key, jsonEncode({'store': storeSlug, 'items': _items.map((i) => i.toJson()).toList()})))
         .catchError((Object _) => false);
   }
 }

@@ -5,7 +5,7 @@ import '../app_scope.dart';
 import '../widgets/common.dart';
 
 /// Entrar, criar conta (cliente) e recuperar a senha com o código enviado por e-mail.
-/// A equipe da loja entra pela mesma tela; o app abre a gestão sozinho.
+/// A equipe da loja (e o admin da plataforma) entra pela mesma tela; o app abre a área certa sozinho.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, this.popOnSuccess = true});
 
@@ -24,7 +24,11 @@ class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _phone = TextEditingController();
   final _password = TextEditingController();
+  final _code = TextEditingController();
   _Mode _mode = _Mode.login;
+
+  /// A conta tem verificação em duas etapas: pede o código do app autenticador.
+  bool _needsCode = false;
   bool _busy = false;
   bool _hidden = true;
 
@@ -36,7 +40,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _email, _phone, _password]) {
+    for (final c in [_name, _email, _phone, _password, _code]) {
       c.dispose();
     }
     super.dispose();
@@ -48,13 +52,20 @@ class _LoginScreenState extends State<LoginScreen> {
     final session = AppScope.of(context).session;
     try {
       if (_mode == _Mode.login) {
-        await session.login(_email.text, _password.text);
+        await session.login(_email.text, _password.text, code: _needsCode ? _code.text : null);
       } else {
         await session.register(name: _name.text, email: _email.text, phone: _phone.text, password: _password.text);
       }
       if (mounted && widget.popOnSuccess && Navigator.canPop(context)) Navigator.pop(context, true);
     } on AccountBlockedException {
       if (mounted && Navigator.canPop(context)) Navigator.pop(context); // a tela de bloqueio aparece na raiz
+    } on ApiException catch (e) {
+      if (e.code == 'TOTP_REQUIRED' && mounted) {
+        setState(() => _needsCode = true);
+        showInfo(context, e.message);
+      } else if (mounted) {
+        showError(context, e);
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -118,6 +129,20 @@ class _LoginScreenState extends State<LoginScreen> {
               },
               onFieldSubmitted: (_) => _submit(),
             ),
+            if (_needsCode && !register) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _code,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                decoration: const InputDecoration(
+                  labelText: 'Código do app autenticador',
+                  prefixIcon: Icon(Icons.verified_user_rounded),
+                ),
+                onFieldSubmitted: (_) => _submit(),
+              ),
+            ],
             const SizedBox(height: 20),
             FilledButton(
               onPressed: _busy ? null : _submit,
@@ -136,11 +161,140 @@ class _LoginScreenState extends State<LoginScreen> {
                     context, MaterialPageRoute(builder: (_) => ForgotPasswordScreen(email: _email.text.trim()))),
                 child: const Text('Esqueci minha senha'),
               ),
+            const Divider(height: 32),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final ok = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const RegisterStoreScreen()));
+                if (ok == true && context.mounted && widget.popOnSuccess && Navigator.canPop(context)) {
+                  Navigator.pop(context, true);
+                }
+              },
+              icon: const Icon(Icons.add_business_rounded),
+              label: const Text('Tenho uma loja: vender na Loja Max'),
+            ),
           ]),
         ),
       ),
     );
   }
+}
+
+/// Lojista abre a loja: nome, endereço (slug) e a conta do dono.
+class RegisterStoreScreen extends StatefulWidget {
+  const RegisterStoreScreen({super.key});
+
+  @override
+  State<RegisterStoreScreen> createState() => _RegisterStoreScreenState();
+}
+
+class _RegisterStoreScreenState extends State<RegisterStoreScreen> {
+  final _form = GlobalKey<FormState>();
+  final _store = TextEditingController();
+  final _slug = TextEditingController();
+  final _owner = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _slugTouched = false;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    for (final c in [_store, _slug, _owner, _email, _password]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_form.currentState!.validate()) return;
+    setState(() => _busy = true);
+    try {
+      await AppScope.of(context).session.registerStore(
+            storeName: _store.text,
+            slug: _slug.text,
+            ownerName: _owner.text,
+            email: _email.text,
+            password: _password.text,
+          );
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Abrir minha loja')),
+      body: Form(
+        key: _form,
+        child: ListView(padding: const EdgeInsets.all(20), children: [
+          Text('Cadastre a loja e já comece a vender: vitrine, pedidos, estoque, fotos e avisos no celular.',
+              style: Theme.of(context).textTheme.bodyLarge),
+          const SizedBox(height: 20),
+          TextFormField(
+            controller: _store,
+            decoration: const InputDecoration(labelText: 'Nome da loja'),
+            textCapitalization: TextCapitalization.words,
+            onChanged: (v) {
+              if (!_slugTouched) _slug.text = slugify(v);
+            },
+            validator: (v) => (v ?? '').trim().length < 2 ? 'Informe o nome da loja' : null,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _slug,
+            decoration: const InputDecoration(labelText: 'Endereço da loja', helperText: 'Os clientes acham a loja por ele'),
+            onChanged: (_) => _slugTouched = true,
+            validator: (v) => RegExp(r'^[a-z0-9-]{3,60}$').hasMatch(v ?? '')
+                ? null
+                : 'Use de 3 a 60 letras minúsculas, números e hífen',
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _owner,
+            decoration: const InputDecoration(labelText: 'Seu nome'),
+            textCapitalization: TextCapitalization.words,
+            validator: (v) => (v ?? '').trim().length < 2 ? 'Informe seu nome' : null,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(labelText: 'E-mail'),
+            validator: (v) => (v ?? '').contains('@') ? null : 'E-mail inválido',
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _password,
+            obscureText: true,
+            decoration: const InputDecoration(labelText: 'Senha', helperText: 'Mínimo de 8 caracteres, com letras e números'),
+            validator: (v) => passwordProblem(v ?? ''),
+          ),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: _busy ? null : _submit,
+            child: _busy
+                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Criar minha loja'),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// "Moda da Ana" → "moda-da-ana" (sem acento, só letras, números e hífen).
+String slugify(String s) {
+  const from = 'áàâãäéèêëíìîïóòôõöúùûüçñ';
+  const to = 'aaaaaeeeeiiiiooooouuuucn';
+  final lower = s.toLowerCase().split('').map((c) {
+    final i = from.indexOf(c);
+    return i >= 0 ? to[i] : c;
+  }).join();
+  return lower.replaceAll(RegExp(r'[^a-z0-9]+'), '-').replaceAll(RegExp(r'^-+|-+$'), '');
 }
 
 /// Mesma regra da API: 8+ caracteres, com letra e número.

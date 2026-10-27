@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_scope.dart';
 import '../screens/account_screen.dart';
+import '../screens/security_screens.dart';
 import 'admin_screens.dart';
 import 'promotions_screen.dart';
 import 'report_screen.dart';
@@ -17,7 +18,7 @@ class MoreScreen extends StatelessWidget {
     final api = session.api;
     void go(Widget page) => Navigator.push(context, MaterialPageRoute(builder: (_) => page));
     return Scaffold(
-      appBar: AppBar(title: Text(session.user?.name ?? 'Mais')),
+      appBar: AppBar(title: Text(session.user?.storeName ?? 'Mais')),
       body: ListView(children: [
         if (owner) ...[
           ListTile(leading: const Icon(Icons.insights_rounded), title: const Text('Resumo de vendas'), onTap: () => go(ReportScreen(api: api))),
@@ -32,8 +33,20 @@ class MoreScreen extends StatelessWidget {
         if (owner) ...[
           ListTile(leading: const Icon(Icons.badge_rounded), title: const Text('Equipe'), onTap: () => go(TeamScreen(api: api))),
           ListTile(leading: const Icon(Icons.storefront_rounded), title: const Text('Dados da loja'), onTap: () => go(StoreSettingsScreen(api: api))),
+          ListTile(
+            leading: const Icon(Icons.policy_rounded),
+            title: const Text('Auditoria'),
+            subtitle: const Text('Quem entrou e o que mudou'),
+            onTap: () => go(SecurityEventsScreen(api: api, store: true)),
+          ),
         ],
         const Divider(),
+        if (session.user?.storeSlug != null)
+          ListTile(
+            leading: const Icon(Icons.link_rounded),
+            title: const Text('Endereço da loja'),
+            subtitle: Text(session.user!.storeSlug!),
+          ),
         ListTile(
           leading: const Icon(Icons.person_rounded),
           title: const Text('Minha conta'),
