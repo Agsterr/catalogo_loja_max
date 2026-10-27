@@ -3,6 +3,7 @@ import 'package:loja_core/loja_core.dart';
 
 import '../app_scope.dart';
 import '../courier_api.dart';
+import 'subscription_screen.dart';
 
 /// Conta do entregador: resumo, região/veículo e as telas comuns (senha, segurança, sair, excluir).
 class AccountTab extends StatelessWidget {
@@ -34,6 +35,7 @@ class AccountTab extends StatelessWidget {
                 ),
               ]),
               const Divider(height: 24),
+              if (profile.cpfMasked != null) Text('CPF ${profile.cpfMasked}', style: t.bodyMedium),
               Text('Atua em ${profile.city} - ${profile.state}, raio de ${profile.radiusKm} km', style: t.bodyMedium),
               const SizedBox(height: 4),
               Text('${profile.deliveredCount} entregas · ${profile.canceledCount} desistências', style: t.bodySmall),
@@ -41,6 +43,12 @@ class AccountTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
+        ListTile(
+          leading: const Icon(Icons.workspace_premium_rounded),
+          title: const Text('Assinatura'),
+          subtitle: _SubscriptionSummary(api: api),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SubscriptionScreen(api: api))),
+        ),
         ListTile(
           leading: const Icon(Icons.edit_location_alt_rounded),
           title: const Text('Região e veículo'),
@@ -60,6 +68,35 @@ class AccountTab extends StatelessWidget {
       ]),
     );
   }
+}
+
+/// "3 de 5 entregas grátis restantes" ou "Ativa até 27/11".
+class _SubscriptionSummary extends StatefulWidget {
+  const _SubscriptionSummary({required this.api});
+
+  final CourierApi api;
+
+  @override
+  State<_SubscriptionSummary> createState() => _SubscriptionSummaryState();
+}
+
+class _SubscriptionSummaryState extends State<_SubscriptionSummary> {
+  String _text = 'Entregas grátis e assinatura';
+
+  @override
+  void initState() {
+    super.initState();
+    widget.api.subscription().then((s) {
+      if (mounted) {
+        setState(() => _text = s.subscribed
+            ? 'Ativa${s.paidUntil == null ? '' : ' até ${date(s.paidUntil!)}'}'
+            : '${s.freeLeft} de ${s.freeLimit} entregas grátis restantes');
+      }
+    }).catchError((Object _) {});
+  }
+
+  @override
+  Widget build(BuildContext context) => Text(_text);
 }
 
 /// Edita região de atuação, veículo e telefone (`PUT /api/courier/me`).

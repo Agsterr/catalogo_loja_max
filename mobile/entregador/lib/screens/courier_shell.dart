@@ -37,6 +37,7 @@ class _CourierShellState extends State<CourierShell> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     LocalNotifications.instance.tapped.addListener(_onTapped);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onTapped()); // toque que abriu o app
   }
 
   @override
@@ -57,10 +58,21 @@ class _CourierShellState extends State<CourierShell> with WidgetsBindingObserver
   }
 
   /// Toque num aviso de corrida: abre o mural (e confere as corridas em andamento).
-  void _onTapped() {
-    if (LocalNotifications.instance.tapped.value == null) return;
+  Future<void> _onTapped() async {
+    final payload = LocalNotifications.instance.tapped.value;
+    if (payload == null || payload.isEmpty || !mounted) return;
     LocalNotifications.instance.tapped.value = null;
-    setState(() => _tab = 0);
+    final target = parsePayload(payload);
+    var tab = 0;
+    if (target != null && target.kind == 'job') {
+      // corrida minha (aceita) → Em andamento; senão é oferta do mural
+      try {
+        final mine = await _api.active();
+        if (mine.any((j) => j.id == target.id)) tab = 1;
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() => _tab = tab);
     _board.currentState?.refresh();
     _active.currentState?.refresh();
   }

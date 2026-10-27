@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:loja_core/loja_core.dart';
 
 import '../courier_api.dart';
+import '../freight.dart';
+import 'subscription_screen.dart';
 
 /// Mural de corridas: liga/desliga o recebimento (online) e lista as corridas abertas perto de você.
 class BoardScreen extends StatefulWidget {
@@ -35,11 +37,13 @@ class BoardScreenState extends State<BoardScreen> {
   GeoPoint? _where;
   Timer? _timer;
   bool _switching = false;
+  CourierSubscription? _sub;
 
   @override
   void initState() {
     super.initState();
     _syncTimer();
+    _loadSub();
   }
 
   @override
@@ -67,8 +71,18 @@ class BoardScreenState extends State<BoardScreen> {
     _key.currentState?.refresh();
   }
 
+  Future<void> _loadSub() async {
+    try {
+      final s = await widget.api.subscription();
+      if (mounted) setState(() => _sub = s);
+    } catch (_) {
+      // o aviso é só um lembrete; sem rede, some
+    }
+  }
+
   void refresh() {
     if (mounted) setState(() => _key = GlobalKey());
+    _loadSub();
   }
 
   Future<void> _toggle(bool online) async {
@@ -123,6 +137,11 @@ class BoardScreenState extends State<BoardScreen> {
             ),
           ]),
         ),
+        if (_sub != null && !_sub!.subscribed && _sub!.freeLeft <= 1)
+          _SubscriptionBanner(
+            sub: _sub!,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SubscriptionScreen(api: widget.api))).then((_) => _loadSub()),
+          ),
         Expanded(
           child: PagedList<CourierJobCard>(
             key: _key,
@@ -150,6 +169,44 @@ String expiresIn(DateTime at, {DateTime? now}) {
   if (left.inMinutes < 1) return 'expira em instantes';
   if (left.inMinutes < 60) return 'expira em ${left.inMinutes} min';
   return 'expira em ${left.inHours} h';
+}
+
+class _SubscriptionBanner extends StatelessWidget {
+  const _SubscriptionBanner({required this.sub, required this.onTap});
+
+  final CourierSubscription sub;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Material(
+        color: scheme.tertiaryContainer,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              Icon(Icons.card_giftcard_rounded, color: scheme.onTertiaryContainer),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                    sub.freeLeft == 0
+                        ? 'Suas entregas grátis acabaram. Assine por ${money(sub.price)}/mês para continuar.'
+                        : 'Resta ${sub.freeLeft} entrega grátis. Depois, assinatura de ${money(sub.price)}/mês.',
+                    style: TextStyle(color: scheme.onTertiaryContainer)),
+              ),
+              const Icon(Icons.chevron_right_rounded),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _JobCardTile extends StatelessWidget {
@@ -180,13 +237,13 @@ class _JobCardTile extends StatelessWidget {
                   _Chip(Icons.shopping_bag_outlined, job.itemCount == 1 ? '1 item' : '${job.itemCount} itens'),
                 ]),
                 const SizedBox(height: 6),
-                Text(expiresIn(job.expiresAt), style: t.bodySmall?.copyWith(color: scheme.outline)),
+                Text('${freightShort(job.freightPayer)} · ${expiresIn(job.expiresAt)}', style: t.bodySmall?.copyWith(color: scheme.outline)),
               ]),
             ),
             const SizedBox(width: 12),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
               Text(money(job.fee), style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w800, color: scheme.primary)),
-              Text('você ganha', style: t.bodySmall),
+              Text('de frete', style: t.bodySmall),
             ]),
           ]),
         ),
@@ -230,7 +287,11 @@ class _JobOfferScreenState extends State<JobOfferScreen> {
       if (mounted) Navigator.pop(context, true);
     } on ApiException catch (e) {
       if (!mounted) return;
-      if (e.status == 409) {
+      if (e.status == 402 || e.code == 'SUBSCRIPTION_REQUIRED') {
+        // acabaram as entregas grátis: leva para a assinatura
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => SubscriptionScreen(api: widget.api, message: e.message)));
+        if (mounted) Navigator.pop(context, false);
+      } else if (e.status == 409) {
         showInfo(context, 'Que pena! Outro entregador pegou essa corrida primeiro.');
         Navigator.pop(context, false);
       } else {
@@ -255,9 +316,11 @@ class _JobOfferScreenState extends State<JobOfferScreen> {
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(24)),
           child: Column(children: [
-            Text('Você ganha', style: t.bodyMedium),
+            Text('Frete', style: t.bodyMedium),
             Text(money(j.fee), style: t.displaySmall?.copyWith(fontWeight: FontWeight.w800, color: scheme.primary)),
             Text('por ${kmLabel(j.tripKm)} de trajeto', style: t.bodyMedium),
+            const SizedBox(height: 4),
+            Text(freightWho(j.freightPayer), textAlign: TextAlign.center, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
           ]),
         ),
         const SizedBox(height: 16),

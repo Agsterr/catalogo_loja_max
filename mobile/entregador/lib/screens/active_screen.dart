@@ -3,6 +3,7 @@ import 'package:loja_core/loja_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../courier_api.dart';
+import '../freight.dart';
 
 /// Corridas em andamento: passo a passo (ir à loja → código de coleta → ir ao cliente → código de entrega).
 class ActiveScreen extends StatefulWidget {
@@ -167,6 +168,10 @@ class _JobCardState extends State<JobCard> {
             const SizedBox(height: 4),
             Text(j.storeName, style: t.bodyLarge?.copyWith(fontWeight: FontWeight.w700)),
             if (j.pickupAddress != null) Text(j.pickupAddress!, style: t.bodyMedium),
+            if (j.storePays) ...[
+              const SizedBox(height: 8),
+              _Reminder(receiveFromStore(j.fee)),
+            ],
             const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: () => _map(j.pickupLat, j.pickupLng),
@@ -206,6 +211,10 @@ class _JobCardState extends State<JobCard> {
                 ),
               ],
             ]),
+            if (!j.storePays) ...[
+              const SizedBox(height: 8),
+              _Reminder(receiveFromCustomer(j.fee)),
+            ],
             const SizedBox(height: 12),
             _CodeField(controller: _code, label: 'Código de entrega (peça ao cliente)'),
             const SizedBox(height: 8),
@@ -218,6 +227,27 @@ class _JobCardState extends State<JobCard> {
           ],
         ]),
       ),
+    );
+  }
+}
+
+/// Lembrete de quanto receber e de quem (o frete vai direto para o entregador).
+class _Reminder extends StatelessWidget {
+  const _Reminder(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [
+        Icon(Icons.payments_rounded, color: scheme.onSecondaryContainer),
+        const SizedBox(width: 10),
+        Expanded(child: Text(text, style: TextStyle(fontWeight: FontWeight.w700, color: scheme.onSecondaryContainer))),
+      ]),
     );
   }
 }

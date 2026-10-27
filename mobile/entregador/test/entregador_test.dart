@@ -7,9 +7,11 @@ import 'package:http/testing.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:loja_core/loja_core.dart';
 import 'package:loja_entregador/courier_api.dart';
+import 'package:loja_entregador/cpf.dart';
 import 'package:loja_entregador/screens/active_screen.dart';
 import 'package:loja_entregador/screens/board_screen.dart';
 import 'package:loja_entregador/screens/register_screen.dart';
+import 'package:loja_entregador/screens/subscription_screen.dart';
 
 /// API simulada: `routes` devolve (status, corpo) para "MÉTODO /caminho"; `calls` guarda o que o app chamou.
 CourierApi _api(Map<String, (int, Object)> routes, List<String> calls) => CourierApi(ApiClient(
@@ -29,15 +31,15 @@ CourierProfile _profile() => const CourierProfile(
 
 Map<String, dynamic> _card(int id) => {
       'id': id, 'storeName': 'Moda da Ana', 'pickupAddress': 'Rua das Flores, 120', 'city': 'Campinas', 'distanceToStoreKm': 1.2,
-      'tripKm': 3.5, 'fee': 9.25, 'itemCount': 2, 'createdAt': '2026-10-27T10:00:00',
+      'tripKm': 3.5, 'fee': 9.25, 'freightPayer': 'CUSTOMER', 'itemCount': 2, 'createdAt': '2026-10-27T10:00:00',
       'expiresAt': DateTime.now().add(const Duration(minutes: 25)).toIso8601String().substring(0, 19),
     };
 
-Map<String, dynamic> _job({String status = 'ACCEPTED'}) => {
+Map<String, dynamic> _job({String status = 'ACCEPTED', String payer = 'CUSTOMER'}) => {
       'id': 5, 'orderCode': 'K7Q2MD', 'status': status, 'statusLabel': 'a caminho', 'storeName': 'Moda da Ana',
       'pickupAddress': 'Rua das Flores, 120', 'pickupLat': -22.9, 'pickupLng': -47.06, 'dropoffAddress': 'Av. Brasil, 500 - Centro',
       'dropoffLat': -22.91, 'dropoffLng': -47.07, 'customerName': 'Carla Souza', 'customerPhone': '11999990000', 'tripKm': 3.5,
-      'fee': 9.25, 'itemCount': 2, 'acceptedAt': '2026-10-27T10:05:00', 'pickedUpAt': null, 'deliveredAt': null,
+      'fee': 9.25, 'freightPayer': payer, 'itemCount': 2, 'acceptedAt': '2026-10-27T10:05:00', 'pickedUpAt': null, 'deliveredAt': null,
     };
 
 Map<String, dynamic> _page(List<Object> items) => {'items': items, 'page': 0, 'size': 20, 'total': items.length, 'hasMore': false};
@@ -71,12 +73,14 @@ void main() {
     expect(find.text('Moda da Ana'), findsOneWidget);
     expect(find.textContaining('9,25'), findsOneWidget);
     expect(find.textContaining('a 1,2 km de você'), findsOneWidget);
-    expect(calls.first, contains('GET /api/courier/jobs/open'));
+    expect(find.textContaining('pago pelo cliente'), findsOneWidget);
+    expect(calls.any((c) => c.contains('GET /api/courier/jobs/open')), isTrue);
 
     await tester.tap(find.text('Moda da Ana'));
     await tester.pumpAndSettle();
     expect(find.text('Aceitar corrida'), findsOneWidget);
     expect(find.textContaining('endereço do cliente aparece depois'), findsOneWidget);
+    expect(find.text('Frete pago pelo cliente na entrega'), findsOneWidget);
     await tester.tap(find.text('Aceitar corrida'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Outro entregador pegou'), findsOneWidget);
@@ -139,7 +143,86 @@ void main() {
     expect(find.text('Informe seu nome'), findsOneWidget);
     expect(find.text('E-mail inválido'), findsOneWidget);
     expect(find.text('Informe a cidade'), findsOneWidget);
+    expect(find.text('CPF inválido'), findsOneWidget);
     expect(calls.where((c) => c.contains('register-courier')), isEmpty);
+  });
+
+  testWidgets('aceitar sem saldo (402) abre a assinatura com a mensagem', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _api({
+      'GET /api/courier/jobs/open': (200, _page([_card(5)])),
+      'POST /api/courier/jobs/5/accept': (402, {'detail': 'Suas 5 entregas grátis acabaram.', 'code': 'SUBSCRIPTION_REQUIRED'}),
+      'GET /api/courier/subscription': (200, {'subscribed': false, 'paidUntil': null, 'freeLeft': 0, 'freeLimit': 5, 'price': 24.99, 'canAccept': false}),
+    }, []);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: BoardScreen(api: api, profile: _profile(), onProfile: (_) {}, onAccepted: () {}, locate: () async => null, visible: false),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('entregas grátis acabaram. Assine'), findsOneWidget); // aviso no topo do mural
+    await tester.tap(find.text('Moda da Ana'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Aceitar corrida'));
+    await tester.pumpAndSettle();
+    expect(find.text('Assinatura'), findsOneWidget);
+    expect(find.text('Suas 5 entregas grátis acabaram.'), findsOneWidget);
+    expect(find.text('0 de 5 entregas grátis restantes'), findsOneWidget);
+  });
+
+  testWidgets('assinatura: Assinar mostra a chave Pix, o valor e o código de referência', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _api({
+      'GET /api/courier/subscription': (200, {'subscribed': false, 'paidUntil': null, 'freeLeft': 3, 'freeLimit': 5, 'price': 24.99, 'canAccept': true}),
+      'POST /api/courier/subscription/checkout': (200, {
+        'method': 'PIX', 'pixKey': 'pagamentos@lojamax.com.br', 'holder': 'Loja Max Ltda', 'reference': 'ASS-7K2Q', 'amount': 24.99,
+        'message': 'Pague e informe o código. A liberação é feita em até 1 dia útil.',
+      }),
+    }, []);
+    await tester.pumpWidget(MaterialApp(home: SubscriptionScreen(api: api)));
+    await tester.pumpAndSettle();
+    expect(find.text('3 de 5 entregas grátis restantes'), findsOneWidget);
+    await tester.tap(find.textContaining('Assinar'));
+    await tester.pumpAndSettle();
+    expect(find.text('pagamentos@lojamax.com.br'), findsOneWidget);
+    expect(find.text('ASS-7K2Q'), findsOneWidget);
+    expect(find.textContaining('24,99'), findsWidgets);
+    expect(find.byTooltip('Copiar chave'), findsOneWidget);
+    expect(find.text('Já paguei, atualizar'), findsOneWidget);
+  });
+
+  testWidgets('em andamento: lembra de receber o frete da loja na coleta e do cliente na entrega', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var status = 'ACCEPTED';
+    var payer = 'STORE';
+    final api = CourierApi(ApiClient(
+      baseUrl: 'http://api.test',
+      httpClient: MockClient((req) async => http.Response(jsonEncode([_job(status: status, payer: payer)]), 200,
+          headers: {'content-type': 'application/json; charset=utf-8'})),
+    ));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ActiveScreen(api: api, onCount: (_) {}, onChanged: () {}))));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('9,25 da loja ao retirar'), findsOneWidget);
+    status = 'PICKED_UP';
+    payer = 'CUSTOMER';
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ActiveScreen(key: UniqueKey(), api: api, onCount: (_) {}, onChanged: () {}))));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('do cliente na entrega (dinheiro ou Pix)'), findsOneWidget);
+  });
+
+  test('CPF: dígitos verificadores e máscara', () {
+    expect(cpfValid('529.982.247-25'), isTrue);
+    expect(cpfValid('52998224725'), isTrue);
+    expect(cpfValid('529.982.247-24'), isFalse);
+    expect(cpfValid('111.111.111-11'), isFalse);
+    expect(cpfValid('123'), isFalse);
+    expect(CpfFormatter().formatEditUpdate(TextEditingValue.empty, const TextEditingValue(text: '52998224725999')).text, '529.982.247-25');
   });
 
   test('tempo até expirar', () {
