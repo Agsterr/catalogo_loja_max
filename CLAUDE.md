@@ -9,6 +9,11 @@
 - Mudou uma tela? Regere as imagens: `cd mobile/telas && flutter test telas_test.dart`.
 - Textos, commits e PRs em português.
 
+## Publicar (deploy)
+- Sessão na nuvem que só consegue enviar para o próprio branch (`ccr-*`): basta dar push nele.
+  `.github/workflows/cloud-to-main.yml` mescla na `main` (cria se não existir) e dispara o deploy (`backend/`, `deploy/`).
+  Antes, rode `git pull origin main` (quando existir) para evitar conflito; com conflito o workflow falha e nada é publicado.
+
 ## Antes de enviar
 - `cd backend && mvn test` (precisa de PostgreSQL com o banco `loja_test`, usuário/senha `loja`).
 - `cd mobile/<core|cliente|lojista|telas> && flutter analyze` e `flutter test` em `cliente` e `lojista`.

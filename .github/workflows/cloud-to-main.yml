@@ -1,0 +1,74 @@
+name: Agente na nuvem → main
+
+# Igual ao Gerenciamento Max: sessões do Claude Code na nuvem trabalham num branch próprio (ccr-*) e não têm acesso ao
+# servidor. Todo push nesses branches é mesclado direto na main e dispara o deploy, igual a um push na main.
+# Se a main ainda não existe, ela é criada a partir do branch.
+# (Push feito com o GITHUB_TOKEN não dispara os outros workflows sozinho, por isso o "gh workflow run".)
+on:
+  push:
+    branches:
+      - "ccr-*"
+
+concurrency:
+  group: cloud-to-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  merge:
+    name: Mesclar na main e publicar
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mesclar ${{ github.ref_name }} na main
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          if ! git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+            echo "A main não existia: criada a partir de ${GITHUB_REF_NAME}."
+            git push origin "HEAD:refs/heads/main"
+            {
+              echo "changed<<EOF"
+              git ls-files
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git checkout -B main origin/main
+          BEFORE=$(git rev-parse HEAD)
+          if ! git merge --no-edit "origin/${GITHUB_REF_NAME}" -m "Merge do agente na nuvem (${GITHUB_REF_NAME})"; then
+            echo "::error::Conflito ao mesclar ${GITHUB_REF_NAME} na main. Peça ao agente para atualizar o branch com a main (git pull origin main) e enviar de novo."
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" = "$BEFORE" ]; then
+            echo "Nada novo para a main."
+            echo "changed=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git push origin HEAD:main
+          {
+            echo "changed<<EOF"
+            git diff --name-only "$BEFORE" HEAD
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Disparar deploy
+        if: steps.merge.outputs.changed != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGED: ${{ steps.merge.outputs.changed }}
+        run: |
+          set -euo pipefail
+          if echo "$CHANGED" | grep -qE '^(backend|deploy)/|^\.github/workflows/deploy\.yml$'; then
+            gh workflow run deploy.yml --ref main
+            echo "### Deploy (servidor) disparado" >> "$GITHUB_STEP_SUMMARY"
+          fi
