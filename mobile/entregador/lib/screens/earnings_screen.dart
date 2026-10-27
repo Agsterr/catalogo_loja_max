@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:loja_core/loja_core.dart';
 
 import '../courier_api.dart';
+import '../freight.dart';
 
 /// Ganhos de hoje, da semana e do mês, e o histórico de corridas.
 class EarningsScreen extends StatefulWidget {
-  const EarningsScreen({super.key, required this.api, required this.visible});
+  const EarningsScreen({super.key, required this.api, required this.visible, this.profile});
 
   final CourierApi api;
+
+  /// Para mostrar a média de avaliações no topo.
+  final CourierProfile? profile;
 
   /// Aba à vista: recarrega ao abrir.
   final bool visible;
@@ -56,6 +60,14 @@ class _EarningsScreenState extends State<EarningsScreen> {
     final e = _earnings;
     return SafeArea(
       child: Column(children: [
+        if (widget.profile != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(ratingText(widget.profile!.ratingAvg, widget.profile!.ratingCount), style: t.titleSmall),
+            ),
+          ),
         if (e != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
@@ -84,7 +96,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
                     color: j.status == 'DELIVERED' ? Colors.green : Theme.of(context).colorScheme.outline),
                 title: Text('${j.storeName} · #${j.orderCode}'),
                 subtitle: Text([j.statusLabel, kmLabel(j.tripKm), if (j.deliveredAt != null) dateTime(j.deliveredAt!)].join(' · ')),
-                trailing: Text(money(j.fee), style: const TextStyle(fontWeight: FontWeight.w800)),
+                trailing: Text(money(jobTotal(j.fee, j.bonus)), style: const TextStyle(fontWeight: FontWeight.w800)),
               ),
             ),
           ),

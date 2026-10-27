@@ -35,6 +35,9 @@ class CourierApi {
   Future<CourierJob> deliver(int id, String code) async =>
       CourierJob.fromJson(await api.post('/api/courier/jobs/$id/deliver', {'code': code}) as Map<String, dynamic>);
 
+  /// Posição ao vivo da corrida (204). 422 = a corrida acabou.
+  Future<void> sendLocation(int id, double lat, double lng) => api.post('/api/courier/jobs/$id/location', {'lat': lat, 'lng': lng});
+
   Future<void> cancel(int id, String? reason) => api.post('/api/courier/jobs/$id/cancel', {'reason': reason});
 
   Future<CourierSubscription> subscription() async =>

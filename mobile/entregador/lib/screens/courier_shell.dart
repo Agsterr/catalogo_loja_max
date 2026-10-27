@@ -96,8 +96,8 @@ class _CourierShellState extends State<CourierShell> with WidgetsBindingObserver
           locate: widget.locate,
           visible: _tab == 0 && _foreground,
         ),
-        ActiveScreen(key: _active, api: api, onCount: (n) => setState(() => _activeCount = n), onChanged: () => _board.currentState?.refresh()),
-        EarningsScreen(api: api, visible: _tab == 2),
+        ActiveScreen(key: _active, api: api, foreground: _foreground, onCount: (n) => setState(() => _activeCount = n), onChanged: () => _board.currentState?.refresh()),
+        EarningsScreen(api: api, visible: _tab == 2, profile: widget.profile),
         AccountTab(api: api, profile: widget.profile, onProfile: widget.onProfile),
       ]),
       bottomNavigationBar: NavigationBar(

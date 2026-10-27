@@ -4,12 +4,19 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../courier_api.dart';
 import '../freight.dart';
+import '../location_reporter.dart';
 
 /// Corridas em andamento: passo a passo (ir à loja → código de coleta → ir ao cliente → código de entrega).
 class ActiveScreen extends StatefulWidget {
-  const ActiveScreen({super.key, required this.api, required this.onCount, required this.onChanged});
+  const ActiveScreen({super.key, required this.api, required this.onCount, required this.onChanged, this.foreground = true, this.reporter});
 
   final CourierApi api;
+
+  /// App aberto à vista: só então a posição é enviada.
+  final bool foreground;
+
+  /// Para testes; no app é criado aqui (envia a cada 15 s).
+  final LocationReporter? reporter;
 
   /// Quantas corridas estão em andamento (badge da aba).
   final ValueChanged<int> onCount;
@@ -24,12 +31,28 @@ class ActiveScreen extends StatefulWidget {
 class ActiveScreenState extends State<ActiveScreen> {
   List<CourierJob>? _jobs;
   Object? _error;
+  late final LocationReporter _reporter = widget.reporter ?? LocationReporter(send: widget.api.sendLocation, locate: safeLocate);
 
   @override
   void initState() {
     super.initState();
     refresh();
   }
+
+  @override
+  void didUpdateWidget(ActiveScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.foreground != widget.foreground) _syncReporter();
+  }
+
+  @override
+  void dispose() {
+    _reporter.dispose();
+    super.dispose();
+  }
+
+  /// Rastreio ao vivo: liga com corrida ativa e app em primeiro plano; desliga no resto.
+  void _syncReporter() => _reporter.update((_jobs ?? const []).map((j) => j.id), foreground: widget.foreground);
 
   Future<void> refresh() async {
     try {
@@ -40,6 +63,7 @@ class ActiveScreenState extends State<ActiveScreen> {
         _error = null;
       });
       widget.onCount(jobs.length);
+      _syncReporter();
     } catch (e) {
       if (mounted) setState(() => _error = e);
     }
@@ -154,7 +178,7 @@ class _JobCardState extends State<JobCard> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
             Expanded(child: Text('Pedido #${j.orderCode}', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
-            Text(money(j.fee), style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800, color: scheme.primary)),
+            Text(money(jobTotal(j.fee, j.bonus)), style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800, color: scheme.primary)),
           ]),
           const SizedBox(height: 4),
           Row(children: [
@@ -162,15 +186,28 @@ class _JobCardState extends State<JobCard> {
             const Expanded(child: Divider(indent: 8, endIndent: 8)),
             _Step(number: 2, label: 'Cliente', done: false, current: !toStore),
           ]),
+          if (j.bonus > 0) ...[
+            const SizedBox(height: 6),
+            Align(alignment: Alignment.centerLeft, child: BonusBadge(j.bonus)),
+          ],
+          const SizedBox(height: 8),
+          Row(children: [
+            Icon(Icons.my_location_rounded, size: 14, color: scheme.outline),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text('Compartilhando sua posição com a loja e o cliente. Deixe o app aberto durante a entrega.',
+                  style: t.bodySmall?.copyWith(color: scheme.outline)),
+            ),
+          ]),
           const SizedBox(height: 12),
           if (toStore) ...[
             Text('1. Vá até a loja', style: t.titleSmall),
             const SizedBox(height: 4),
             Text(j.storeName, style: t.bodyLarge?.copyWith(fontWeight: FontWeight.w700)),
             if (j.pickupAddress != null) Text(j.pickupAddress!, style: t.bodyMedium),
-            if (j.storePays) ...[
+            for (final r in pickupReminders(fee: j.fee, bonus: j.bonus, storePays: j.storePays)) ...[
               const SizedBox(height: 8),
-              _Reminder(receiveFromStore(j.fee)),
+              _Reminder(r),
             ],
             const SizedBox(height: 8),
             OutlinedButton.icon(

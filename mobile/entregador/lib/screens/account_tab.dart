@@ -3,6 +3,7 @@ import 'package:loja_core/loja_core.dart';
 
 import '../app_scope.dart';
 import '../courier_api.dart';
+import '../freight.dart';
 import 'subscription_screen.dart';
 
 /// Conta do entregador: resumo, região/veículo e as telas comuns (senha, segurança, sair, excluir).
@@ -35,6 +36,8 @@ class AccountTab extends StatelessWidget {
                 ),
               ]),
               const Divider(height: 24),
+              Text(ratingText(profile.ratingAvg, profile.ratingCount), style: t.titleSmall),
+              const SizedBox(height: 4),
               if (profile.cpfMasked != null) Text('CPF ${profile.cpfMasked}', style: t.bodyMedium),
               Text('Atua em ${profile.city} - ${profile.state}, raio de ${profile.radiusKm} km', style: t.bodyMedium),
               const SizedBox(height: 4),
