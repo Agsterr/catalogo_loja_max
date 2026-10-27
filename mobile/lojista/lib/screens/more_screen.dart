@@ -3,6 +3,7 @@ import 'package:loja_core/loja_core.dart';
 
 import '../app_scope.dart';
 import 'admin_screens.dart';
+import 'plan_screen.dart';
 import 'promotions_screen.dart';
 import 'report_screen.dart';
 
@@ -32,6 +33,12 @@ class MoreScreen extends StatelessWidget {
         if (owner) ...[
           ListTile(leading: const Icon(Icons.badge_rounded), title: const Text('Equipe'), onTap: () => go(TeamScreen(api: api))),
           ListTile(leading: const Icon(Icons.storefront_rounded), title: const Text('Dados da loja'), onTap: () => go(StoreSettingsScreen(api: api))),
+          ListTile(
+            leading: const Icon(Icons.workspace_premium_rounded),
+            title: const Text('Plano e mensalidade'),
+            subtitle: const Text('Teste grátis, vencimento e como pagar'),
+            onTap: () => go(const PlanScreen()),
+          ),
           ListTile(
             leading: const Icon(Icons.policy_rounded),
             title: const Text('Auditoria'),

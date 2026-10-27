@@ -87,6 +87,9 @@ class StoreFlowIntegrationTest {
     @Autowired
     com.max.loja.delivery.DispatchService dispatch;
 
+    @Autowired
+    com.max.loja.store.StoreBilling billing;
+
     @MockitoBean
     PushSender push;
 
@@ -566,6 +569,69 @@ class StoreFlowIntegrationTest {
                 status().isCreated());
         rateLimiter.reset();
         return new Shop(slug, res.get("token").asText());
+    }
+
+    @Test
+    void storeSubscriptionTrialGraceSuspensionAndRenewal() throws Exception {
+        Shop shop = openStore("Loja Mensal");
+        String owner = shop.owner();
+        String admin = login("admin@plataforma.test", "SenhaDoAdmin123");
+        long storeId = jdbc.queryForObject("select id from store where slug = ?", Long.class, shop.slug());
+
+        // loja nova: teste grátis, aparece para os clientes
+        JsonNode plan = call(owner, get("/api/store/plan"), null, status().isOk());
+        assertThat(plan.get("state").asText()).isEqualTo("TRIAL");
+        assertThat(plan.get("price").decimalValue()).isEqualByComparingTo("49.90");
+        assertThat(plan.get("daysLeft").asLong()).isBetween(28L, 30L);
+        call(null, get(shop.base()), null, status().isOk());
+        call(register("Cliente"), get("/api/store/plan"), null, status().isForbidden());
+
+        // avisos: faltam 3 dias → a equipe é avisada uma vez só
+        jdbc.update("update store set access_until = ? where id = ?", LocalDateTime.now(clock).plusDays(3).plusHours(2), storeId);
+        billing.remind();
+        billing.remind();
+        long avisos = 0;
+        for (JsonNode n : call(owner, get("/api/notifications"), null, status().isOk()).get("items")) {
+            if ("PLAN".equals(n.get("type").asText())) {
+                avisos++;
+            }
+        }
+        assertThat(avisos).isEqualTo(1);
+
+        // venceu mas está na tolerância (5 dias): ainda aparece; passou: some da loja, da busca e das cidades
+        jdbc.update("update store set access_until = ? where id = ?", LocalDateTime.now(clock).minusDays(2), storeId);
+        assertThat(call(owner, get("/api/store/plan"), null, status().isOk()).get("state").asText()).isEqualTo("GRACE");
+        call(null, get(shop.base()), null, status().isOk());
+        jdbc.update("update store set access_until = ? where id = ?", LocalDateTime.now(clock).minusDays(7), storeId);
+        JsonNode suspended = call(owner, get("/api/store/plan"), null, status().isOk());
+        assertThat(suspended.get("state").asText()).isEqualTo("SUSPENDED");
+        assertThat(suspended.get("visible").asBoolean()).isFalse();
+        call(null, get(shop.base()), null, status().isNotFound());
+        assertThat(call(null, get("/api/public/stores?q=" + shop.slug()), null, status().isOk()).get("items").findValuesAsText("slug"))
+                .doesNotContain(shop.slug());
+        call(owner, get("/api/store/orders"), null, status().isOk()); // a equipe continua entrando para pagar
+
+        // renovar: o dono gera a cobrança, o admin confirma (uma vez só vale) e a loja volta
+        JsonNode pay = call(owner, post("/api/store/plan/checkout"), null, status().isOk());
+        assertThat(pay.get("pixKey").asText()).isEqualTo("pix@plataforma.test");
+        assertThat(pay.get("amount").decimalValue()).isEqualByComparingTo("49.90");
+        long paymentId = 0;
+        for (JsonNode p : call(admin, get("/api/platform/store-payments"), null, status().isOk()).get("items")) {
+            if (p.get("reference").asText().equals(pay.get("reference").asText())) {
+                paymentId = id(p);
+            }
+        }
+        assertThat(paymentId).isPositive();
+        call(admin, post("/api/platform/store-payments/" + paymentId + "/confirm"), null, status().isNoContent());
+        call(admin, post("/api/platform/store-payments/" + paymentId + "/confirm"), null, status().isNoContent());
+        JsonNode active = call(owner, get("/api/store/plan"), null, status().isOk());
+        assertThat(active.get("state").asText()).isEqualTo("ACTIVE");
+        assertThat(active.get("daysLeft").asLong()).isBetween(29L, 30L); // vencida: os 30 dias contam a partir de hoje
+        call(null, get(shop.base()), null, status().isOk());
+
+        // cortesia do admin soma dias
+        call(admin, post("/api/platform/stores/" + storeId + "/grant"), Map.of("days", 10), status().isNoContent());
+        assertThat(call(owner, get("/api/store/plan"), null, status().isOk()).get("daysLeft").asLong()).isGreaterThan(30);
     }
 
     @Test

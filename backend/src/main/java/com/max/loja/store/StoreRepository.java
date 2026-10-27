@@ -20,7 +20,7 @@ public interface StoreRepository extends JpaRepository<Store, Long> {
      * com {@code radiusKm}, só traz as que estão dentro do raio. Bloqueadas só para o admin.
      */
     @Query(value = """
-            select * from store s where (:includeBlocked = true or s.blocked = false)
+            select * from store s where (:includeBlocked = true or (s.blocked = false and s.access_until > :cutoff))
             and (:q = '%%' or unaccent(lower(s.name)) like :q or s.slug like :q)
             and (:city = '%%' or unaccent(lower(s.city)) like :city)
             and (:state = '' or s.state = :state)
@@ -36,7 +36,7 @@ public interface StoreRepository extends JpaRepository<Store, Long> {
                      + sin(radians(cast(:lat as double precision))) * sin(radians(s.latitude))))) end,
                 s.name""",
             countQuery = """
-            select count(*) from store s where (:includeBlocked = true or s.blocked = false)
+            select count(*) from store s where (:includeBlocked = true or (s.blocked = false and s.access_until > :cutoff))
             and (:q = '%%' or unaccent(lower(s.name)) like :q or s.slug like :q)
             and (:city = '%%' or unaccent(lower(s.city)) like :city)
             and (:state = '' or s.state = :state)
@@ -48,14 +48,15 @@ public interface StoreRepository extends JpaRepository<Store, Long> {
             nativeQuery = true)
     Page<Store> search(@Param("q") String q, @Param("city") String city, @Param("state") String state,
                        @Param("lat") Double lat, @Param("lng") Double lng, @Param("radiusKm") Double radiusKm,
-                       @Param("includeBlocked") boolean includeBlocked, Pageable page);
+                       @Param("includeBlocked") boolean includeBlocked, @Param("cutoff") java.time.LocalDateTime cutoff,
+                       Pageable page);
 
     /** Cidades com loja aberta ao público, com a quantidade de lojas (para o filtro do app). */
     @Query(value = """
             select s.city as city, s.state as state, count(*) as total from store s
-            where s.blocked = false and s.city is not null and s.city <> ''
+            where s.blocked = false and s.access_until > :cutoff and s.city is not null and s.city <> ''
             group by s.city, s.state order by count(*) desc, s.city limit 100""", nativeQuery = true)
-    java.util.List<CityCount> cities();
+    java.util.List<CityCount> cities(@Param("cutoff") java.time.LocalDateTime cutoff);
 
     interface CityCount {
         String getCity();

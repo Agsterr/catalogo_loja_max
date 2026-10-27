@@ -1205,6 +1205,17 @@ class AdminPayment {
   final String status;
   final DateTime createdAt;
 
+  /// Cobrança de mensalidade de loja (a lista do admin usa o mesmo cartão: o nome mostrado é o da loja).
+  factory AdminPayment.fromStoreJson(Map<String, dynamic> j) => AdminPayment(
+        id: j['id'] as int,
+        courierId: j['storeId'] as int,
+        courierName: j['storeName'] as String?,
+        amount: _d(j['amount']),
+        reference: j['reference'] as String,
+        status: j['status'] as String,
+        createdAt: _dt(j['createdAt']),
+      );
+
   factory AdminPayment.fromJson(Map<String, dynamic> j) => AdminPayment(
         id: j['id'] as int,
         courierId: j['courierId'] as int,
@@ -1213,5 +1224,36 @@ class AdminPayment {
         reference: j['reference'] as String,
         status: j['status'] as String,
         createdAt: _dt(j['createdAt']),
+      );
+}
+
+/// Mensalidade da loja: TRIAL (teste grátis), ACTIVE (paga), GRACE (vencida, ainda aparece) ou SUSPENDED (oculta para os clientes).
+class StorePlan {
+  const StorePlan({
+    required this.state,
+    required this.accessUntil,
+    required this.daysLeft,
+    required this.price,
+    required this.visible,
+    required this.trialDays,
+  });
+
+  final String state;
+  final DateTime accessUntil;
+  final int daysLeft;
+  final double price;
+  final bool visible;
+  final int trialDays;
+
+  /// Vale lembrar o dono: vence em até 7 dias, venceu ou está oculta.
+  bool get needsAttention => state == 'GRACE' || state == 'SUSPENDED' || daysLeft <= 7;
+
+  factory StorePlan.fromJson(Map<String, dynamic> j) => StorePlan(
+        state: j['state'] as String,
+        accessUntil: _dt(j['accessUntil']),
+        daysLeft: (j['daysLeft'] as num).toInt(),
+        price: _d(j['price']),
+        visible: j['visible'] as bool,
+        trialDays: (j['trialDays'] as num).toInt(),
       );
 }

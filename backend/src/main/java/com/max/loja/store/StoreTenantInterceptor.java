@@ -12,15 +12,17 @@ import org.springframework.web.servlet.HandlerMapping;
 
 /**
  * Nas rotas do cliente ({@code /api/public/stores/{slug}/**} e {@code /api/stores/{slug}/**}) a loja vem do
- * endereço na URL. Loja bloqueada ou inexistente responde 404.
+ * endereço na URL. Loja bloqueada, sem mensalidade em dia ou inexistente responde 404.
  */
 @Component
 class StoreTenantInterceptor implements HandlerInterceptor {
 
     private final StoreRepository stores;
+    private final StoreBilling billing;
 
-    StoreTenantInterceptor(StoreRepository stores) {
+    StoreTenantInterceptor(StoreRepository stores, StoreBilling billing) {
         this.stores = stores;
+        this.billing = billing;
     }
 
     @Override
@@ -30,6 +32,7 @@ class StoreTenantInterceptor implements HandlerInterceptor {
         String slug = vars != null ? vars.get("slug") : null;
         if (slug != null) {
             Long storeId = stores.findBySlug(slug).filter(s -> !s.isBlocked())
+                    .filter(billing::visible) // mensalidade vencida além da tolerância: fica oculta até renovar
                     .orElseThrow(() -> new NotFoundException("Loja não encontrada")).getId();
             TenantContext.set(storeId);
         }

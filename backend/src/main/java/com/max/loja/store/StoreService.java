@@ -75,10 +75,12 @@ public class StoreService {
     private final ObjectMapper json;
     private final Clock clock;
     private final DeliveryPricing courierPricing;
+    private final StoreBilling billing;
 
     public StoreService(StoreRepository stores, AuditService audit, ObjectMapper json, Clock clock,
-                        DeliveryPricing courierPricing) {
+                        DeliveryPricing courierPricing, StoreBilling billing) {
         this.courierPricing = courierPricing;
+        this.billing = billing;
         this.stores = stores;
         this.audit = audit;
         this.json = json;
@@ -167,13 +169,13 @@ public class StoreService {
         Double radius = la == null || radiusKm == null || radiusKm <= 0 ? null : Math.min(radiusKm, 500);
         String uf = state == null ? "" : state.trim().toUpperCase();
         return PageResponse.of(stores.search(Search.like(q == null ? "" : q), Search.like(city == null ? "" : city),
-                uf.length() == 2 ? uf : "", la, ln, radius, false, PageResponse.request(page, size, Sort.unsorted())),
+                uf.length() == 2 ? uf : "", la, ln, radius, false, billing.visibleCutoff(), PageResponse.request(page, size, Sort.unsorted())),
                 s -> card(s, la, ln));
     }
 
     @Transactional(readOnly = true)
     public List<CityCount> cities() {
-        return stores.cities().stream().map(c -> new CityCount(c.getCity(), c.getState(), c.getTotal())).toList();
+        return stores.cities(billing.visibleCutoff()).stream().map(c -> new CityCount(c.getCity(), c.getState(), c.getTotal())).toList();
     }
 
     @Transactional

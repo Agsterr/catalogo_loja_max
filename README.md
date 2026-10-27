@@ -57,6 +57,8 @@ Geradas pelo próprio Flutter com dados de exemplo: `cd mobile/telas && flutter 
   "Calcular a entrega" e a taxa vem da loja (`/api/public/stores/{slug}/delivery-quote`); frete grátis continua valendo. Sem faixas, taxa fixa.
 - **Entrega por entregador da plataforma** (app **Loja Max Entregador**): cadastro com aprovação, mural por região, aceite (só um
   leva), coleta e entrega confirmadas por código, ganhos. Veja `docs/ENTREGADORES.md` (fluxo, etapas e decisões de escala).
+- **Planos:** o app do cliente é grátis; a loja paga mensalidade (teste de 30 dias) e o entregador, depois de 5 entregas grátis.
+  Veja `docs/PLANOS.md`.
 - **Alerta forte de novo pedido** (canal `novos_pedidos`: som alto, vibração e toque insistente).
 - Produtos com tamanhos/cores, **fotos pela câmera/galeria** (R2), entrada/contagem/perda de estoque com histórico paginado.
 - Promoções por período — loja inteira, departamento, categoria ou **um produto só** — com **push para os clientes quando começa**.

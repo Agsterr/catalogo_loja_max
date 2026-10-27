@@ -19,6 +19,20 @@ ApiClient _api(Map<String, Object> routes) => ApiClient(
     );
 
 void main() {
+  test('mensalidade da loja: situação e quando lembrar o dono', () {
+    StorePlan plan(String state, int days) => StorePlan.fromJson({
+          'state': state, 'accessUntil': '2026-11-20T10:00:00', 'hiddenAfter': '2026-11-25T10:00:00', 'daysLeft': days,
+          'price': 49.9, 'visible': state != 'SUSPENDED', 'trialDays': 30,
+        });
+    expect(plan('TRIAL', 25).needsAttention, isFalse);
+    expect(plan('ACTIVE', 7).needsAttention, isTrue);
+    expect(plan('GRACE', -2).needsAttention, isTrue);
+    expect(plan('SUSPENDED', -9).visible, isFalse);
+    final pay = PaymentInstructions.fromJson({'pixKey': 'pix@x.com', 'holder': 'Loja Max', 'reference': 'LJ1-00001', 'amount': 49.9, 'message': 'ok'});
+    expect(pay.configured, isTrue);
+    expect(PaymentInstructions.fromJson({'pixKey': '', 'reference': 'R', 'amount': 1, 'message': 'm'}).configured, isFalse);
+  });
+
   setUpAll(() => initializeDateFormatting('pt_BR'));
 
   testWidgets('pedidos da loja: lista os em aberto com cliente e status', (tester) async {

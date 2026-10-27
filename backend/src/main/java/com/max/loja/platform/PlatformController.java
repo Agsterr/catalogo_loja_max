@@ -37,7 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PlatformController {
 
     public record StoreAdminResponse(Long id, String slug, String name, boolean blocked, String blockedReason,
-                                     LocalDateTime createdAt, long products, long orders) {
+                                     LocalDateTime createdAt, long products, long orders, LocalDateTime accessUntil) {
     }
 
     private final StoreRepository stores;
@@ -64,7 +64,7 @@ public class PlatformController {
     public PageResponse<StoreAdminResponse> stores(@RequestParam(required = false) String q,
                                                    @RequestParam(required = false) Integer page,
                                                    @RequestParam(required = false) Integer size) {
-        return PageResponse.of(stores.search(Search.like(q == null ? "" : q), "%%", "", null, null, null, true, PageResponse.request(page, size, Sort.by("name"))),
+        return PageResponse.of(stores.search(Search.like(q == null ? "" : q), "%%", "", null, null, null, true, LocalDateTime.now(clock), PageResponse.request(page, size, Sort.by("name"))),
                 this::response);
     }
 
@@ -140,7 +140,7 @@ public class PlatformController {
         Long products = jdbc.queryForObject("select count(*) from product where tenant_id = ?", Long.class, s.getId());
         Long orders = jdbc.queryForObject("select count(*) from orders where tenant_id = ?", Long.class, s.getId());
         return new StoreAdminResponse(s.getId(), s.getSlug(), s.getName(), s.isBlocked(), s.getBlockedReason(),
-                s.getCreatedAt(), products == null ? 0 : products, orders == null ? 0 : orders);
+                s.getCreatedAt(), products == null ? 0 : products, orders == null ? 0 : orders, s.getAccessUntil());
     }
 
     private Store store(Long id) {

@@ -21,6 +21,7 @@ import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.NotFoundException;
 import com.max.loja.shared.TwoFactorRequiredException;
 import com.max.loja.store.Store;
+import com.max.loja.store.StoreBilling;
 import com.max.loja.store.StoreRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,13 +47,15 @@ public class AuthService {
     private final LoginProperties loginProps;
     private final Clock clock;
     private final CourierService couriers;
+    private final StoreBilling billing;
     /** Hash de uma senha qualquer: o login de e-mail inexistente gasta o mesmo tempo (não revela quem tem conta). */
     private final String dummyHash;
 
     public AuthService(AppUserRepository users, StoreRepository stores, PasswordEncoder passwordEncoder,
                        JwtService jwtService, AccountStatusService statuses, TwoFactorService twoFactor,
-                       AuditService audit, LoginProperties loginProps, Clock clock, CourierService couriers) {
+                       AuditService audit, LoginProperties loginProps, Clock clock, CourierService couriers, StoreBilling billing) {
         this.couriers = couriers;
+        this.billing = billing;
         this.users = users;
         this.stores = stores;
         this.passwordEncoder = passwordEncoder;
@@ -95,6 +98,7 @@ public class AuthService {
         store.setName(req.storeName().trim());
         store.setSlug(req.slug());
         store.setCreatedAt(LocalDateTime.now(clock));
+        store.setAccessUntil(billing.trialEnd()); // teste grátis (app.billing.store-trial-days)
         stores.save(store);
         AppUser owner = newUser(req.ownerName(), req.email(), req.password(), Role.OWNER, store.getId());
         audit.recordFor(store.getId(), AuditService.STORE_CREATED, owner.getId(), store.getSlug());

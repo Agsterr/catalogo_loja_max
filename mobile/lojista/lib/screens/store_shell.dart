@@ -3,6 +3,7 @@ import 'package:loja_core/loja_core.dart';
 
 import '../app_scope.dart';
 import 'more_screen.dart';
+import 'plan_screen.dart';
 import 'product_form_screen.dart';
 import 'store_orders_screen.dart';
 import 'store_products_screen.dart';
@@ -20,13 +21,27 @@ class _StoreShellState extends State<StoreShell> with WidgetsBindingObserver {
   int _unread = 0;
   final _inbox = GlobalKey<NotificationsScreenState>();
   final _orders = GlobalKey<StoreOrdersScreenState>();
+  StorePlan? _plan;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     LocalNotifications.instance.tapped.addListener(_onTapped);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onTapped());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _onTapped();
+      _loadPlan();
+    });
+  }
+
+  /// O dono é lembrado aqui quando a mensalidade está perto de vencer, venceu ou a loja ficou oculta.
+  Future<void> _loadPlan() async {
+    final session = AppScope.of(context).session;
+    if (!(session.user?.isOwner ?? false)) return;
+    try {
+      final j = await session.api.get('/api/store/plan') as Map<String, dynamic>;
+      if (mounted) setState(() => _plan = StorePlan.fromJson(j));
+    } catch (_) {}
   }
 
   @override
@@ -42,6 +57,7 @@ class _StoreShellState extends State<StoreShell> with WidgetsBindingObserver {
       // o app aberto em segundo plano por dias não desloga: renova o token ao voltar
       AppScope.of(context).session.refreshIfDue();
       _refresh();
+      _loadPlan();
     }
   }
 
@@ -77,11 +93,33 @@ class _StoreShellState extends State<StoreShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final session = AppScope.of(context).session;
     return Scaffold(
-      body: IndexedStack(index: _tab, children: [
-        StoreOrdersScreen(key: _orders, api: session.api),
-        StoreProductsScreen(api: session.api),
-        NotificationsScreen(key: _inbox, session: session, onOpen: _open, onUnread: (n) => setState(() => _unread = n)),
-        const MoreScreen(),
+      body: Column(children: [
+        if (_plan != null && _plan!.needsAttention)
+          Material(
+            color: _plan!.visible ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.errorContainer,
+            child: SafeArea(
+              bottom: false,
+              child: ListTile(
+                dense: true,
+                leading: const Icon(Icons.workspace_premium_rounded),
+                title: Text(switch (_plan!.state) {
+                  'SUSPENDED' => 'Sua loja está oculta para os clientes',
+                  'GRACE' => 'Mensalidade vencida',
+                  _ => _plan!.daysLeft <= 0 ? 'Sua mensalidade vence hoje' : 'Sua mensalidade vence em ${_plan!.daysLeft} dia(s)',
+                }),
+                subtitle: const Text('Toque para renovar'),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlanScreen())).then((_) => _loadPlan()),
+              ),
+            ),
+          ),
+        Expanded(
+          child: IndexedStack(index: _tab, children: [
+            StoreOrdersScreen(key: _orders, api: session.api),
+            StoreProductsScreen(api: session.api),
+            NotificationsScreen(key: _inbox, session: session, onOpen: _open, onUnread: (n) => setState(() => _unread = n)),
+            const MoreScreen(),
+          ]),
+        ),
       ]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,

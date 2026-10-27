@@ -48,6 +48,10 @@ public class NotificationService {
             return new Target(id, null);
         }
 
+        public static Target none() {
+            return new Target(null, null);
+        }
+
         static Target product(Long id) {
             return new Target(null, id);
         }

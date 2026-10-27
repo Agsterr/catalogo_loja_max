@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import 'api_client.dart';
 import 'format.dart';
@@ -458,6 +459,57 @@ class ColorDot extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Como pagar com Pix: chave com botão Copiar, valor, titular e o código de referência (que o admin usa para confirmar).
+class PixInstructionsCard extends StatelessWidget {
+  const PixInstructionsCard({super.key, required this.instructions});
+
+  final PaymentInstructions instructions;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final i = instructions;
+    return Card(
+      color: scheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Pagar com Pix · ${money(i.amount)}', style: t.titleMedium),
+          const SizedBox(height: 8),
+          if (i.configured) ...[
+            Text('Chave Pix', style: t.bodySmall),
+            Row(children: [
+              Expanded(child: SelectableText(i.pixKey!, style: t.titleSmall)),
+              IconButton(
+                tooltip: 'Copiar a chave',
+                icon: const Icon(Icons.copy_rounded),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: i.pixKey!));
+                  showInfo(context, 'Chave Pix copiada.');
+                },
+              ),
+            ]),
+            if (i.holder != null && i.holder!.isNotEmpty) Text('Recebedor: ${i.holder}', style: t.bodySmall),
+            const SizedBox(height: 8),
+          ],
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(color: scheme.surface, borderRadius: BorderRadius.circular(12)),
+            child: Column(children: [
+              Text('Código de referência', style: t.bodySmall),
+              SelectableText(i.reference, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: 2)),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          Text(i.message, style: t.bodySmall),
+        ]),
       ),
     );
   }

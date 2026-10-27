@@ -90,3 +90,7 @@ app:
     free-deliveries: ${BILLING_FREE_DELIVERIES:5}
     pix-key: ${BILLING_PIX_KEY:}
     pix-holder: ${BILLING_PIX_HOLDER:}
+    # Mensalidade da loja (o app do cliente é grátis): valor, teste grátis e tolerância depois do vencimento
+    store-monthly: ${BILLING_STORE_MONTHLY:49.90}
+    store-trial-days: ${BILLING_STORE_TRIAL_DAYS:30}
+    store-grace-days: ${BILLING_STORE_GRACE_DAYS:5}

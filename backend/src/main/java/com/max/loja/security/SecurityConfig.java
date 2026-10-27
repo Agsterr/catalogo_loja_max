@@ -63,7 +63,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/stores/**").hasRole("CUSTOMER")
                         // Gestão: relatórios, equipe, promoções e dados da loja só o dono
                         .requestMatchers("/api/store/reports/**", "/api/store/users/**", "/api/store/promotions/**",
-                                "/api/store/audit/**").hasRole("OWNER")
+                                "/api/store/audit/**", "/api/store/plan/**").hasRole("OWNER")
                         .requestMatchers(HttpMethod.PUT, "/api/store/settings").hasRole("OWNER")
                         .requestMatchers(HttpMethod.POST, "/api/store/settings/**").hasRole("OWNER")
                         .requestMatchers(HttpMethod.DELETE, "/api/store/settings/**").hasRole("OWNER")

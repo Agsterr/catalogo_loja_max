@@ -38,6 +38,25 @@ class _PlatformShellState extends State<PlatformShell> {
   }
 }
 
+/// Pergunta quantos dias liberar (cortesia de mensalidade/assinatura). Nulo se cancelar ou valor inválido.
+Future<int?> _askDays(BuildContext context, String title) async {
+  final c = TextEditingController(text: '30');
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: TextField(controller: c, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Dias', suffixText: 'dias')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Voltar')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Liberar')),
+      ],
+    ),
+  );
+  final n = int.tryParse(c.text.trim());
+  c.dispose();
+  return ok == true && n != null && n >= 1 && n <= 366 ? n : null;
+}
+
 Future<String?> _askReason(BuildContext context, String title) async {
   final c = TextEditingController();
   final ok = await showDialog<bool>(
@@ -57,7 +76,9 @@ Future<String?> _askReason(BuildContext context, String title) async {
 }
 
 class _SearchList<T> extends StatefulWidget {
-  const _SearchList({required this.title, required this.hint, required this.load, required this.itemBuilder});
+  const _SearchList({required this.title, required this.hint, required this.load, required this.itemBuilder, this.actions});
+
+  final List<Widget>? actions;
 
   final String title;
   final String hint;
@@ -76,6 +97,7 @@ class _SearchListState<T> extends State<_SearchList<T>> {
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
           title: Text(widget.title),
+          actions: widget.actions,
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(64),
             child: Padding(
@@ -110,6 +132,16 @@ class _StoresTab extends StatelessWidget {
   Widget build(BuildContext context) => _SearchList<Map<String, dynamic>>(
         title: 'Lojas da plataforma',
         hint: 'Nome ou endereço da loja',
+        actions: [
+          IconButton(
+            tooltip: 'Mensalidades para confirmar',
+            icon: const Icon(Icons.payments_rounded),
+            onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => Scaffold(appBar: AppBar(title: const Text('Mensalidades das lojas')), body: _PaymentsList(api: api, stores: true)))),
+          ),
+        ],
         load: (q, page) async => PageResult.fromJson(
             await api.get('/api/platform/stores?${Uri(queryParameters: {'page': '$page', 'q': q}).query}') as Map<String, dynamic>,
             (j) => j),
@@ -123,9 +155,27 @@ class _StoresTab extends StatelessWidget {
               s['slug'],
               '${s['products']} produtos · ${s['orders']} pedidos',
               'desde ${date(DateTime.parse(s['createdAt'] as String))}',
+              if (s['accessUntil'] != null) 'acesso até ${date(DateTime.parse(s['accessUntil'] as String))}',
               if (blocked) 'bloqueada${s['blockedReason'] != null ? ': ${s['blockedReason']}' : ''}',
             ].join(' · ')),
-            trailing: TextButton(
+            isThreeLine: true,
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(
+                tooltip: 'Dar dias de acesso',
+                icon: const Icon(Icons.card_giftcard_rounded),
+                onPressed: () async {
+                  final days = await _askDays(context, 'Dar dias a ${s['name']}');
+                  if (days == null) return;
+                  try {
+                    await api.post('/api/platform/stores/${s['id']}/grant', {'days': days});
+                    if (context.mounted) showInfo(context, 'Acesso liberado por $days dias.');
+                    refresh();
+                  } catch (e) {
+                    if (context.mounted) showError(context, e);
+                  }
+                },
+              ),
+              TextButton(
               onPressed: () async {
                 try {
                   if (blocked) {
@@ -142,6 +192,7 @@ class _StoresTab extends StatelessWidget {
               },
               child: Text(blocked ? 'Desbloquear' : 'Bloquear'),
             ),
+            ]),
           );
         },
       );
@@ -283,7 +334,7 @@ class _CouriersTabState extends State<_CouriersTab> {
             ),
           ),
         ),
-        body: _status == 'PAYMENTS' ? _PaymentsList(api: widget.api, onChanged: () {}) : PagedList<AdminCourier>(
+        body: _status == 'PAYMENTS' ? _PaymentsList(api: widget.api) : PagedList<AdminCourier>(
           key: _key,
           load: (page) async => PageResult.fromJson(
               await widget.api.get('/api/platform/couriers?${Uri(queryParameters: {'page': '$page', 'status': _status}).query}')
@@ -329,10 +380,12 @@ class _CouriersTabState extends State<_CouriersTab> {
 
 /// Cobranças de assinatura esperando a confirmação do pagamento (o entregador pagou o Pix da plataforma).
 class _PaymentsList extends StatefulWidget {
-  const _PaymentsList({required this.api, required this.onChanged});
+  const _PaymentsList({required this.api, this.stores = false});
 
   final ApiClient api;
-  final VoidCallback onChanged;
+
+  /// Mensalidades de lojas (senão, de entregadores).
+  final bool stores;
 
   @override
   State<_PaymentsList> createState() => _PaymentsListState();
@@ -355,7 +408,7 @@ class _PaymentsListState extends State<_PaymentsList> {
     );
     if (ok != true) return;
     try {
-      await widget.api.post('/api/platform/courier-payments/${p.id}/confirm');
+      await widget.api.post('/api/platform/${widget.stores ? 'store' : 'courier'}-payments/${p.id}/confirm');
       _key.currentState?.refresh();
     } catch (e) {
       if (mounted) showError(context, e);
@@ -366,15 +419,15 @@ class _PaymentsListState extends State<_PaymentsList> {
   Widget build(BuildContext context) => PagedList<AdminPayment>(
         key: _key,
         load: (page) async => PageResult.fromJson(
-            await widget.api.get('/api/platform/courier-payments?${Uri(queryParameters: {'page': '$page'}).query}')
+            await widget.api.get('/api/platform/${widget.stores ? 'store' : 'courier'}-payments?${Uri(queryParameters: {'page': '$page'}).query}')
                 as Map<String, dynamic>,
-            AdminPayment.fromJson),
+            widget.stores ? AdminPayment.fromStoreJson : AdminPayment.fromJson),
         empty: const EmptyState(icon: Icons.payments_outlined, text: 'Nenhuma assinatura esperando confirmação.'),
         separator: const Divider(height: 1),
         padding: EdgeInsets.zero,
         itemBuilder: (context, p) => ListTile(
           leading: const Icon(Icons.payments_rounded),
-          title: Text('${p.courierName ?? 'Entregador'} · ${money(p.amount)}'),
+          title: Text('${p.courierName ?? (widget.stores ? 'Loja' : 'Entregador')} · ${money(p.amount)}'),
           subtitle: Text('Código ${p.reference} · ${dateTime(p.createdAt)}'),
           trailing: FilledButton(onPressed: () => _confirm(p), child: const Text('Confirmar')),
         ),

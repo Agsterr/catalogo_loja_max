@@ -61,6 +61,13 @@ public class Store {
     /** Faixas de entrega por distância em JSON (veja {@code DeliveryZones}); nulo = taxa fixa. */
     private String deliveryZones;
 
+    /**
+     * A loja aparece para os clientes até esta data (teste grátis ou mensalidade paga) mais a tolerância
+     * ({@code app.billing.store-grace-days}); depois fica oculta até renovar.
+     */
+    @Column(nullable = false)
+    private LocalDateTime accessUntil = LocalDateTime.now().plusDays(30);
+
     /** Bloqueada pelo administrador da plataforma. */
     private boolean blocked;
     private String blockedReason;
