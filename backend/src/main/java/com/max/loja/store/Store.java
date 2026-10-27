@@ -55,6 +55,9 @@ public class Store {
     private Double latitude;
     private Double longitude;
 
+    /** Faixas de entrega por distância em JSON (veja {@code DeliveryZones}); nulo = taxa fixa. */
+    private String deliveryZones;
+
     /** Bloqueada pelo administrador da plataforma. */
     private boolean blocked;
     private String blockedReason;

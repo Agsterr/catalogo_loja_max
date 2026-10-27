@@ -338,6 +338,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
   final _uf = TextEditingController();
   double? _lat;
   double? _lng;
+  List<DeliveryZone> _zones = [];
   bool _pickup = true;
   bool _delivery = true;
   bool _loaded = false;
@@ -370,6 +371,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
         _uf.text = s.state ?? '';
         _lat = s.latitude;
         _lng = s.longitude;
+        _zones = [...s.deliveryZones];
         _free.text = s.freeDeliveryFrom?.toStringAsFixed(2).replaceAll('.', ',') ?? '';
         _pickup = s.pickupEnabled;
         _delivery = s.deliveryEnabled;
@@ -414,6 +416,44 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
     }
   }
 
+  Future<void> _editZone([int? index]) async {
+    final km = TextEditingController(text: index == null ? '' : _zones[index].upToKm.toString().replaceAll('.', ','));
+    final fee = TextEditingController(text: index == null ? '' : _zones[index].fee.toStringAsFixed(2).replaceAll('.', ','));
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Faixa de entrega'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: km, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Até quantos km', suffixText: 'km')),
+          const SizedBox(height: 12),
+          TextField(controller: fee, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Taxa', prefixText: 'R\$ ')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Voltar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Salvar')),
+        ],
+      ),
+    );
+    final k = double.tryParse(km.text.trim().replaceAll(',', '.'));
+    final f = _money(fee.text);
+    km.dispose();
+    fee.dispose();
+    if (ok != true || !mounted) return;
+    if (k == null || k <= 0 || k > 100 || f == null || f < 0) {
+      showInfo(context, 'Informe a distância (até 100 km) e a taxa.');
+      return;
+    }
+    setState(() {
+      final z = DeliveryZone(k, f);
+      if (index == null) {
+        _zones = [..._zones, z];
+      } else {
+        _zones[index] = z;
+      }
+      _zones.sort((a, b) => a.upToKm.compareTo(b.upToKm));
+    });
+  }
+
   Future<void> _save() async {
     setState(() => _busy = true);
     try {
@@ -431,6 +471,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
         'state': _uf.text.trim(),
         'latitude': _lat,
         'longitude': _lng,
+        'deliveryZones': _zones.map((z) => z.toJson()).toList(),
         'openingHours': _hoursSet ? _week.map((d) => d.toJson()).toList() : null,
       });
       if (mounted) showInfo(context, 'Dados da loja salvos.');
@@ -616,11 +657,38 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
               SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Retirada na loja'), value: _pickup, onChanged: (v) => setState(() => _pickup = v)),
               SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Entrega'), value: _delivery, onChanged: (v) => setState(() => _delivery = v)),
               if (_delivery) ...[
-                TextField(
-                  controller: _fee,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Taxa de entrega', prefixText: 'R\$ '),
-                ),
+                if (_zones.isEmpty)
+                  TextField(
+                    controller: _fee,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Taxa de entrega (igual para todos)', prefixText: 'R\$ '),
+                  ),
+                const SizedBox(height: 12),
+                Text('Entrega por distância', style: t.titleSmall),
+                Text(
+                    _lat == null
+                        ? 'Marque a localização da loja (acima) para cobrar por distância.'
+                        : 'Cada faixa vale até a distância informada; além da última, a loja não entrega. Sem faixas, vale a taxa acima.',
+                    style: t.bodySmall),
+                for (var i = 0; i < _zones.length; i++)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text('Até ${kmLabel(_zones[i].upToKm)}'),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(money(_zones[i].fee), style: const TextStyle(fontWeight: FontWeight.w700)),
+                      IconButton(onPressed: () => setState(() => _zones.removeAt(i)), icon: const Icon(Icons.delete_outline_rounded, size: 20)),
+                    ]),
+                    onTap: () => _editZone(i),
+                  ),
+                if (_zones.length < 6)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                        onPressed: _lat == null ? null : _editZone,
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                        label: const Text('Adicionar faixa')),
+                  ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _free,

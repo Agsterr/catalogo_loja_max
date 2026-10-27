@@ -25,3 +25,6 @@ Uri whatsappUri(String phone, [String text = '']) {
   if (digits.length <= 11) digits = '55$digits';
   return Uri.parse('https://wa.me/$digits${text.isEmpty ? '' : '?text=${Uri.encodeComponent(text)}'}');
 }
+
+/// Distância para mostrar: "3 km", "2,5 km".
+String kmLabel(double km) => '${km == km.roundToDouble() ? km.toInt() : km.toString().replaceAll('.', ',')} km';

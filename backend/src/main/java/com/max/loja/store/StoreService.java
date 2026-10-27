@@ -36,7 +36,8 @@ public class StoreService {
                                @Size(min = 7, max = 7) @Valid List<StoreHours.Day> openingHours,
                                @Size(max = 80) String city, @Pattern(regexp = "^$|^[A-Za-z]{2}$") String state,
                                @DecimalMin("-90") @DecimalMax("90") Double latitude,
-                               @DecimalMin("-180") @DecimalMax("180") Double longitude) {
+                               @DecimalMin("-180") @DecimalMax("180") Double longitude,
+                               @Valid List<DeliveryZones.Zone> deliveryZones) {
     }
 
     /** {@code status}: aberta/fechada agora (nulo sem horário informado); {@code hours}: linhas para mostrar. */
@@ -44,12 +45,20 @@ public class StoreService {
                                 String pickupAddress, boolean pickupEnabled, boolean deliveryEnabled, BigDecimal deliveryFee,
                                 BigDecimal freeDeliveryFrom, String logoUrl, String coverUrl,
                                 List<StoreHours.Day> openingHours, List<String> hours, StoreHours.Status status,
-                                String city, String state, Double latitude, Double longitude) {
+                                String city, String state, Double latitude, Double longitude,
+                                List<DeliveryZones.Zone> deliveryZones) {
     }
 
     /** Cartão da busca de lojas no app do cliente; {@code distanceKm} só vem quando a busca mandou a posição. */
     public record StoreCard(Long id, String slug, String name, String instagram, String description, String logoUrl,
                             StoreHours.Status status, String city, String state, Double distanceKm) {
+    }
+
+    /**
+     * Quanto custa a entrega para quem está em ({@code lat}, {@code lng}): {@code needsLocation} quando a loja cobra por
+     * distância e o app ainda não mandou a posição; {@code available=false} fora da área de entrega.
+     */
+    public record DeliveryQuote(boolean available, boolean needsLocation, Double distanceKm, BigDecimal fee, String message) {
     }
 
     public record CityCount(String city, String state, long total) {
@@ -72,7 +81,8 @@ public class StoreService {
         return new StoreResponse(s.getId(), s.getSlug(), s.getName(), s.getDescription(), s.getWhatsapp(), s.getInstagram(),
                 s.getPickupAddress(), s.isPickupEnabled(), s.isDeliveryEnabled(), s.getDeliveryFee(), s.getFreeDeliveryFrom(),
                 s.getLogoUrl(), s.getCoverUrl(), days, StoreHours.lines(days),
-                StoreHours.status(days, LocalDateTime.now(clock)), s.getCity(), s.getState(), s.getLatitude(), s.getLongitude());
+                StoreHours.status(days, LocalDateTime.now(clock)), s.getCity(), s.getState(), s.getLatitude(), s.getLongitude(),
+                DeliveryZones.parse(s.getDeliveryZones(), json));
     }
 
     private StoreCard card(Store s, Double lat, Double lng) {
@@ -81,6 +91,22 @@ public class StoreService {
         return new StoreCard(s.getId(), s.getSlug(), s.getName(), s.getInstagram(), s.getDescription(), s.getLogoUrl(),
                 StoreHours.status(StoreHours.parse(s.getOpeningHours(), json), LocalDateTime.now(clock)), s.getCity(),
                 s.getState(), km);
+    }
+
+    public DeliveryQuote deliveryQuote(Store s, Double lat, Double lng, BigDecimal subtotal) {
+        boolean free = s.getFreeDeliveryFrom() != null && subtotal.compareTo(s.getFreeDeliveryFrom()) >= 0;
+        List<DeliveryZones.Zone> zones = DeliveryZones.parse(s.getDeliveryZones(), json);
+        if (zones.isEmpty() || s.getLatitude() == null || s.getLongitude() == null) {
+            return new DeliveryQuote(true, false, null, free ? BigDecimal.ZERO : s.getDeliveryFee(), null);
+        }
+        if (lat == null || lng == null || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+            return new DeliveryQuote(false, true, null, null, "Use sua localização para calcular a entrega.");
+        }
+        double km = Math.round(distanceKm(lat, lng, s.getLatitude(), s.getLongitude()) * 10) / 10.0;
+        return zones.stream().filter(z -> km <= z.upToKm()).findFirst()
+                .map(z -> new DeliveryQuote(true, false, km, free ? BigDecimal.ZERO : z.fee(), null))
+                .orElseGet(() -> new DeliveryQuote(false, false, km, null, "Você está a " + km + " km: fora da área de entrega"
+                        + " (até " + zones.get(zones.size() - 1).upToKm() + " km)."));
     }
 
     /** Distância em linha reta (haversine), em km. */
@@ -128,6 +154,11 @@ public class StoreService {
         Store s = current();
         s.setName(req.name().trim());
         s.setDescription(blank(req.description()));
+        String zones = DeliveryZones.write(req.deliveryZones(), json);
+        if (zones != null && (req.latitude() == null || req.longitude() == null)) {
+            throw new BusinessException("Marque a localização da loja para cobrar entrega por distância");
+        }
+        s.setDeliveryZones(zones);
         s.setCity(blank(req.city()));
         s.setState(blank(req.state()) == null ? null : req.state().trim().toUpperCase());
         boolean hasPoint = req.latitude() != null && req.longitude() != null;

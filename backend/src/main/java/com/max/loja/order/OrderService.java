@@ -170,8 +170,11 @@ public class OrderService {
         }
         BigDecimal fee = BigDecimal.ZERO;
         if (req.deliveryMethod() == DeliveryMethod.DELIVERY) {
-            boolean free = store.getFreeDeliveryFrom() != null && subtotal.compareTo(store.getFreeDeliveryFrom()) >= 0;
-            fee = free ? BigDecimal.ZERO : store.getDeliveryFee();
+            StoreService.DeliveryQuote quote = stores.deliveryQuote(store, req.deliveryLat(), req.deliveryLng(), subtotal);
+            if (!quote.available()) {
+                throw new BusinessException(quote.message());
+            }
+            fee = quote.fee();
         }
         order.setSubtotal(Money.round(subtotal));
         order.setDiscount(Money.round(saved));

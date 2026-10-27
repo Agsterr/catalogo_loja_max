@@ -92,6 +92,37 @@ class StoreCard {
       );
 }
 
+/// Faixa de entrega: até [upToKm] km custa [fee].
+class DeliveryZone {
+  const DeliveryZone(this.upToKm, this.fee);
+
+  final double upToKm;
+  final double fee;
+
+  Map<String, dynamic> toJson() => {'upToKm': upToKm, 'fee': fee};
+
+  factory DeliveryZone.fromJson(Map<String, dynamic> j) => DeliveryZone(_d(j['upToKm']), _d(j['fee']));
+}
+
+/// Taxa de entrega para a posição do cliente (loja que cobra por distância).
+class DeliveryQuote {
+  const DeliveryQuote({required this.available, required this.needsLocation, this.distanceKm, this.fee, this.message});
+
+  final bool available;
+  final bool needsLocation;
+  final double? distanceKm;
+  final double? fee;
+  final String? message;
+
+  factory DeliveryQuote.fromJson(Map<String, dynamic> j) => DeliveryQuote(
+        available: j['available'] as bool,
+        needsLocation: j['needsLocation'] as bool,
+        distanceKm: _dn(j['distanceKm']),
+        fee: _dn(j['fee']),
+        message: j['message'] as String?,
+      );
+}
+
 /// Cidade que tem loja, com a quantidade (filtro do cliente).
 class CityCount {
   const CityCount({required this.city, this.state, required this.total});
@@ -354,6 +385,7 @@ class StoreInfo {
     this.state,
     this.latitude,
     this.longitude,
+    this.deliveryZones = const [],
   });
 
   final String slug;
@@ -378,6 +410,9 @@ class StoreInfo {
   final double? latitude;
   final double? longitude;
 
+  /// Entrega por distância (vazio = taxa fixa).
+  final List<DeliveryZone> deliveryZones;
+
   factory StoreInfo.fromJson(Map<String, dynamic> j) => StoreInfo(
         slug: j['slug'] as String,
         name: j['name'] as String,
@@ -400,6 +435,9 @@ class StoreInfo {
         state: j['state'] as String?,
         latitude: _dn(j['latitude']),
         longitude: _dn(j['longitude']),
+        deliveryZones: (j['deliveryZones'] as List? ?? const [])
+            .map((z) => DeliveryZone.fromJson(z as Map<String, dynamic>))
+            .toList(),
       );
 }
 

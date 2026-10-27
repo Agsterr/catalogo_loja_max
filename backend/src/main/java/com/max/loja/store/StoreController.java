@@ -63,6 +63,14 @@ public class StoreController {
         return service.response(service.current());
     }
 
+    /** Taxa de entrega para a posição do cliente (a posição só vale nesta consulta). */
+    @GetMapping("/api/public/stores/{slug}/delivery-quote")
+    public StoreService.DeliveryQuote deliveryQuote(@PathVariable String slug, @RequestParam(required = false) Double lat,
+                                                    @RequestParam(required = false) Double lng,
+                                                    @RequestParam(defaultValue = "0") java.math.BigDecimal subtotal) {
+        return service.deliveryQuote(service.current(), lat, lng, subtotal);
+    }
+
     @GetMapping("/api/store/settings")
     public StoreResponse mine() {
         return service.response(service.current());

@@ -21,7 +21,8 @@ public final class OrderDtos {
 
     public record PlaceOrderRequest(@NotEmpty @Size(max = 30) List<@Valid ItemRequest> items,
                                     @NotNull DeliveryMethod deliveryMethod, @NotNull PaymentMethod paymentMethod,
-                                    @Size(max = 400) String address, @Size(max = 500) String notes) {
+                                    @Size(max = 400) String address, @Size(max = 500) String notes,
+                                    Double deliveryLat, Double deliveryLng) {
     }
 
     public record StatusRequest(@NotNull OrderStatus status, @Size(max = 300) String note) {

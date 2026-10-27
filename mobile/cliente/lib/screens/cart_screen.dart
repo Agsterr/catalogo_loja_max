@@ -186,6 +186,11 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
   final _notes = TextEditingController();
   bool _busy = false;
 
+  /// Loja que cobra por distância: posição do cliente e a taxa calculada pela loja.
+  GeoPoint? _where;
+  DeliveryQuote? _quote;
+  bool _locating = false;
+
   @override
   void initState() {
     super.initState();
@@ -256,9 +261,31 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
     super.dispose();
   }
 
+  bool get _byDistance => _store != null && _store!.deliveryZones.isNotEmpty && _store!.latitude != null;
+
+  Future<void> _locate() async {
+    setState(() => _locating = true);
+    try {
+      final p = await currentPosition();
+      final q = await widget.api.get(
+          '/api/public/stores/${widget.cart.storeSlug}/delivery-quote?lat=${p.lat}&lng=${p.lng}&subtotal=${widget.cart.subtotal}');
+      if (mounted) {
+        setState(() {
+          _where = p;
+          _quote = DeliveryQuote.fromJson(q as Map<String, dynamic>);
+        });
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
   double get _fee {
     final s = _store;
     if (s == null || !_delivery) return 0;
+    if (_byDistance) return _quote?.fee ?? 0;
     if (s.freeDeliveryFrom != null && widget.cart.subtotal >= s.freeDeliveryFrom!) return 0;
     return s.deliveryFee;
   }
@@ -266,6 +293,10 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
   Future<void> _place() async {
     if (_delivery && _address.text.trim().length < 10) {
       showInfo(context, 'Informe o endereço completo para a entrega.');
+      return;
+    }
+    if (_delivery && _byDistance && (_quote == null || !_quote!.available)) {
+      showInfo(context, _quote?.message ?? 'Toque em "Calcular a entrega" para usar sua localização.');
       return;
     }
     setState(() => _busy = true);
@@ -276,6 +307,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
         'deliveryMethod': _delivery ? 'DELIVERY' : 'PICKUP',
         'paymentMethod': _payment,
         if (_delivery) 'address': _address.text.trim(),
+        if (_delivery && _where != null) ...{'deliveryLat': _where!.lat, 'deliveryLng': _where!.lng},
         if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
       }) as Map<String, dynamic>;
       widget.cart.clear();
@@ -344,6 +376,28 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
                         label: const Text('Salvar este endereço'),
                       ),
                     ),
+                  if (_byDistance) ...[
+                    const SizedBox(height: 4),
+                    OutlinedButton.icon(
+                      onPressed: _locating ? null : _locate,
+                      icon: _locating
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.my_location_rounded),
+                      label: Text(_quote == null ? 'Calcular a entrega (usar minha localização)' : 'Recalcular com minha localização'),
+                    ),
+                    if (_quote != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          _quote!.available
+                              ? 'Você está a ${_quote!.distanceKm?.toStringAsFixed(1).replaceAll('.', ',')} km da loja.'
+                              : (_quote!.message ?? 'Fora da área de entrega.'),
+                          style: t.bodySmall?.copyWith(color: _quote!.available ? null : Theme.of(context).colorScheme.error),
+                        ),
+                      ),
+                    Text('Entregamos até ${kmLabel(s.deliveryZones.last.upToKm)}. A localização só calcula a taxa e não é guardada.',
+                        style: t.bodySmall),
+                  ],
                 ],
                 const SizedBox(height: 12),
                 Text('Pagamento (na retirada/entrega)', style: t.titleMedium),
@@ -361,7 +415,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
                 ),
                 const SizedBox(height: 8),
                 _row('Produtos', money(widget.cart.subtotal)),
-                if (_delivery) _row('Entrega', _fee == 0 ? 'Grátis' : money(_fee)),
+                if (_delivery) _row('Entrega', _byDistance && _quote == null ? 'a calcular' : (_fee == 0 ? 'Grátis' : money(_fee))),
                 _row('Total estimado', money(widget.cart.subtotal + _fee), bold: true),
                 Text('Os preços são conferidos pela loja na hora do pedido.', style: t.bodySmall),
                 const SizedBox(height: 12),

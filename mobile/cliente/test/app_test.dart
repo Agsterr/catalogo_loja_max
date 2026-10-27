@@ -121,6 +121,19 @@ void main() {
     expect(cart.items.last.maxStock, 5);
   });
 
+  test('entrega por distância: faixas e frase da distância', () {
+    expect(kmLabel(3), '3 km');
+    expect(kmLabel(2.5), '2,5 km');
+    expect(kmLabel(10.05), '10,05 km');
+    final q = DeliveryQuote.fromJson({'available': true, 'needsLocation': false, 'distanceKm': 1.4, 'fee': 8, 'message': null});
+    expect(q.fee, 8);
+    final info = StoreInfo.fromJson({
+      'slug': 'x', 'name': 'X', 'pickupEnabled': true, 'deliveryEnabled': true, 'deliveryFee': 5,
+      'deliveryZones': [{'upToKm': 3, 'fee': 8}, {'upToKm': 8, 'fee': 15}],
+    });
+    expect(info.deliveryZones.map((z) => z.upToKm), [3, 8]);
+  });
+
   test('cor do nome e horário da loja', () {
     expect(colorFor('Preto'), colorFor('preta'));
     expect(colorFor('Azul marinho'), isNot(colorFor('Rosa')));

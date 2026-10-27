@@ -483,6 +483,35 @@ class StoreFlowIntegrationTest {
         settings.put("latitude", 99);
         call(owner, put("/api/store/settings"), settings, status().isBadRequest());
 
+        // entrega por distância: até 3 km R$ 8, até 8 km R$ 15, além disso não entrega; frete grátis a partir de R$ 200
+        settings.put("latitude", -23.5505);
+        settings.put("deliveryZones", List.of(Map.of("upToKm", 8, "fee", 15), Map.of("upToKm", 3, "fee", 8)));
+        settings.put("freeDeliveryFrom", 200);
+        JsonNode zoned = call(owner, put("/api/store/settings"), settings, status().isOk());
+        assertThat(zoned.get("deliveryZones").get(0).get("upToKm").asDouble()).isEqualTo(3.0); // guardadas em ordem
+        String quoteUrl = shop.base() + "/delivery-quote?subtotal=100&";
+        assertThat(call(null, get(quoteUrl + "lat=-23.56&lng=-46.64"), null, status().isOk()).get("fee").decimalValue())
+                .isEqualByComparingTo("8"); // ~1,4 km
+        assertThat(call(null, get(quoteUrl + "lat=-23.59&lng=-46.68"), null, status().isOk()).get("fee").decimalValue())
+                .isEqualByComparingTo("15"); // ~6,6 km: faixa dos 8 km
+        assertThat(call(null, get(quoteUrl + "lat=-22.90&lng=-43.17"), null, status().isOk()).get("available").asBoolean()).isFalse();
+        assertThat(call(null, get(quoteUrl.replace("subtotal=100", "subtotal=300") + "lat=-23.56&lng=-46.64"), null, status().isOk())
+                .get("fee").decimalValue()).isEqualByComparingTo("0");
+        assertThat(call(null, get(quoteUrl.substring(0, quoteUrl.length() - 1)), null, status().isOk()).get("needsLocation").asBoolean())
+                .isTrue();
+        JsonNode dummy = product.get("variants").get(0);
+        String bruna = register("Bruna");
+        Map<String, Object> delivery = new HashMap<>(Map.of("items", List.of(Map.of("variantId", dummy.get("id").asLong(), "quantity", 1)),
+                "deliveryMethod", "DELIVERY", "paymentMethod", "PIX", "address", "Rua das Flores, 123 - Centro"));
+        call(bruna, post(shop.orders()), delivery, status().isUnprocessableEntity()); // sem localização
+        delivery.put("deliveryLat", -22.90);
+        delivery.put("deliveryLng", -43.17);
+        call(bruna, post(shop.orders()), delivery, status().isUnprocessableEntity()); // fora da área
+        delivery.put("deliveryLat", -23.56);
+        delivery.put("deliveryLng", -46.64);
+        JsonNode placed = call(bruna, post(shop.orders()), delivery, status().isCreated());
+        assertThat(placed.get("deliveryFee").decimalValue()).isEqualByComparingTo("8");
+
         // conferência do carrinho: preço de agora, estoque e peça de outra loja
         long v42 = product.get("variants").get(1).get("id").asLong();
         Shop other = openStore("Outra");
