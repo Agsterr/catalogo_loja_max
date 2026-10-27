@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- O Flutter precisa de INTERNET para hot reload e depuração. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Só no debug: API local sem HTTPS (http://10.0.2.2:8080). O release só fala HTTPS. -->
+    <application android:usesCleartextTraffic="true" tools:replace="android:usesCleartextTraffic"/>
+</manifest>
