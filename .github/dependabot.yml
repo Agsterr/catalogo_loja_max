@@ -9,7 +9,7 @@ updates:
       spring:
         patterns: ["*"]
   - package-ecosystem: pub
-    directory: /mobile
+    directories: ["/mobile/core", "/mobile/cliente", "/mobile/lojista"]
     schedule:
       interval: weekly
     groups:
