@@ -8,6 +8,10 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:loja_core/loja_core.dart';
 import 'package:loja_entregador/courier_api.dart';
 import 'package:loja_entregador/cpf.dart';
+import 'package:loja_entregador/freight.dart';
+import 'package:loja_entregador/location_reporter.dart';
+import 'package:loja_entregador/screens/account_tab.dart';
+import 'package:loja_entregador/app_scope.dart';
 import 'package:loja_entregador/screens/active_screen.dart';
 import 'package:loja_entregador/screens/board_screen.dart';
 import 'package:loja_entregador/screens/register_screen.dart';
@@ -29,17 +33,17 @@ CourierProfile _profile() => const CourierProfile(
     id: 1, name: 'Zé Moto', email: 'ze@x.com', phone: '11988887777', vehicle: 'MOTO', city: 'Campinas', state: 'SP',
     radiusKm: 10, status: 'APPROVED', online: true, deliveredCount: 3, canceledCount: 0);
 
-Map<String, dynamic> _card(int id) => {
+Map<String, dynamic> _card(int id, {double bonus = 0}) => {
       'id': id, 'storeName': 'Moda da Ana', 'pickupAddress': 'Rua das Flores, 120', 'city': 'Campinas', 'distanceToStoreKm': 1.2,
-      'tripKm': 3.5, 'fee': 9.25, 'freightPayer': 'CUSTOMER', 'itemCount': 2, 'createdAt': '2026-10-27T10:00:00',
+      'tripKm': 3.5, 'fee': 9.25, 'bonus': bonus, 'freightPayer': 'CUSTOMER', 'itemCount': 2, 'createdAt': '2026-10-27T10:00:00',
       'expiresAt': DateTime.now().add(const Duration(minutes: 25)).toIso8601String().substring(0, 19),
     };
 
-Map<String, dynamic> _job({String status = 'ACCEPTED', String payer = 'CUSTOMER'}) => {
+Map<String, dynamic> _job({String status = 'ACCEPTED', String payer = 'CUSTOMER', double bonus = 0}) => {
       'id': 5, 'orderCode': 'K7Q2MD', 'status': status, 'statusLabel': 'a caminho', 'storeName': 'Moda da Ana',
       'pickupAddress': 'Rua das Flores, 120', 'pickupLat': -22.9, 'pickupLng': -47.06, 'dropoffAddress': 'Av. Brasil, 500 - Centro',
       'dropoffLat': -22.91, 'dropoffLng': -47.07, 'customerName': 'Carla Souza', 'customerPhone': '11999990000', 'tripKm': 3.5,
-      'fee': 9.25, 'freightPayer': payer, 'itemCount': 2, 'acceptedAt': '2026-10-27T10:05:00', 'pickedUpAt': null, 'deliveredAt': null,
+      'fee': 9.25, 'bonus': bonus, 'freightPayer': payer, 'itemCount': 2, 'acceptedAt': '2026-10-27T10:05:00', 'pickedUpAt': null, 'deliveredAt': null,
     };
 
 Map<String, dynamic> _page(List<Object> items) => {'items': items, 'page': 0, 'size': 20, 'total': items.length, 'hasMore': false};
@@ -214,6 +218,97 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: ActiveScreen(key: UniqueKey(), api: api, onCount: (_) {}, onChanged: () {}))));
     await tester.pumpAndSettle();
     expect(find.textContaining('do cliente na entrega (dinheiro ou Pix)'), findsOneWidget);
+  });
+
+  testWidgets('mural: mostra o total com bônus e o selo do bônus', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = _api({'GET /api/courier/jobs/open': (200, _page([_card(5, bonus: 3)]))}, []);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: BoardScreen(api: api, profile: _profile(), onProfile: (_) {}, onAccepted: () {}, locate: () async => null, visible: false),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('12,25'), findsOneWidget); // 9,25 de frete + 3,00 de bônus
+    expect(find.textContaining('Bônus +'), findsOneWidget);
+    expect(find.textContaining('pago pela loja na coleta'), findsOneWidget);
+  });
+
+  testWidgets('em andamento: envia a posição enquanto há corrida ativa, lembra o bônus e mostra o aviso', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final sent = <String>[];
+    final api = CourierApi(ApiClient(
+      baseUrl: 'http://api.test',
+      httpClient: MockClient((req) async {
+        if (req.method == 'POST') sent.add('${req.url.path} ${req.body}');
+        return http.Response(req.method == 'POST' ? '' : jsonEncode([_job(bonus: 3, payer: 'STORE')]), req.method == 'POST' ? 204 : 200,
+            headers: {'content-type': 'application/json; charset=utf-8'});
+      }),
+    ));
+    final reporter = LocationReporter(send: api.sendLocation, locate: () async => const GeoPoint(-22.9, -47.06), every: const Duration(seconds: 15));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: ActiveScreen(api: api, reporter: reporter, onCount: (_) {}, onChanged: () {}))));
+    await tester.pumpAndSettle();
+    expect(reporter.running, isTrue);
+    expect(sent.first, '/api/courier/jobs/5/location {"lat":-22.9,"lng":-47.06}');
+    expect(find.textContaining('Compartilhando sua posição'), findsOneWidget);
+    expect(find.textContaining('Deixe o app aberto'), findsOneWidget);
+    expect(find.textContaining('Receba o bônus de'), findsOneWidget);
+    expect(find.textContaining('12,25'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox()); // sai da tela: para o envio
+    expect(reporter.running, isFalse);
+  });
+
+  test('LocationReporter: manda a posição, para quando a corrida acaba (422) e ignora falha de rede', () async {
+    final calls = <String>[];
+    var mode = 'ok';
+    final r = LocationReporter(
+      send: (id, lat, lng) async {
+        calls.add('$id');
+        if (mode == 'end') throw ApiException(422, 'Esta corrida já acabou');
+        if (mode == 'net') throw Exception('sem rede');
+      },
+      locate: () async => const GeoPoint(1, 2),
+      every: const Duration(hours: 1),
+    );
+    r.update([5], foreground: false);
+    expect(r.running, isFalse); // em segundo plano não envia
+    r.update([5], foreground: true);
+    await Future<void>.delayed(Duration.zero); // a primeira posição sai já ao ligar
+    expect(calls, ['5']);
+    await r.tick();
+    expect(calls, ['5', '5']);
+    mode = 'net';
+    await r.tick();
+    expect(r.jobs, {5}); // falha de rede: segue tentando
+    mode = 'end';
+    await r.tick();
+    expect(r.jobs, isEmpty);
+    expect(r.running, isFalse);
+    r.update([], foreground: true);
+    expect(r.running, isFalse);
+  });
+
+  testWidgets('conta: mostra a média de avaliações e o CPF mascarado', (tester) async {
+    final api = _api({
+      'GET /api/courier/subscription': (200, {'subscribed': false, 'paidUntil': null, 'freeLeft': 3, 'freeLimit': 5, 'price': 24.99, 'canAccept': true}),
+    }, []);
+    const p = CourierProfile(
+        id: 1, name: 'Zé Moto', email: 'ze@x.com', phone: '11988887777', vehicle: 'MOTO', city: 'Campinas', state: 'SP',
+        radiusKm: 10, status: 'APPROVED', online: true, deliveredCount: 23, canceledCount: 0, cpfMasked: '***.982.247-**',
+        ratingAvg: 4.8, ratingCount: 23);
+    await tester.pumpWidget(AppScope(
+      session: Session(),
+      child: MaterialApp(home: Scaffold(body: AccountTab(api: api, profile: p, onProfile: (_) {}))),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('★ 4,8 (23 avaliações)'), findsOneWidget);
+    expect(find.textContaining('***.982.247-**'), findsOneWidget);
+    expect(ratingText(null, 0), 'Sem avaliações ainda');
+    expect(ratingText(5, 1), '★ 5,0 (1 avaliação)');
   });
 
   test('CPF: dígitos verificadores e máscara', () {
