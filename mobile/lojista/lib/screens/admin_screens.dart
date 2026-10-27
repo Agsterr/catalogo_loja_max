@@ -665,10 +665,22 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                   title: const Text('Entregador da plataforma'),
                   subtitle: Text(_lat == null
                       ? 'Marque a localização da loja (acima) para usar.'
-                      : 'Entregadores da região pegam a entrega. A taxa é pela distância (calculada pela plataforma) e o '
-                          'cliente paga antes. Você passa o código de coleta quando o entregador chegar.'),
+                      : 'Entregadores da região pegam a entrega. O frete é pela distância e vai direto ao entregador (a plataforma '
+                          'não passa dinheiro): o cliente paga na entrega, ou você paga na coleta quando o pedido passa do valor de '
+                          'frete grátis. Os produtos o cliente paga a você; marque "pago" e confirme o pedido para chamar o entregador.'),
                   value: _courier,
                   onChanged: _lat == null && !_courier ? null : (v) => setState(() => _courier = v),
+                ),
+              ],
+              if (_delivery && _courier) ...[
+                TextField(
+                  controller: _free,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Frete grátis para o cliente a partir de (você paga o entregador)',
+                    helperText: 'Vazio = o cliente sempre paga o frete. 0 = você sempre paga.',
+                    prefixText: 'R\$ ',
+                  ),
                 ),
               ],
               if (_delivery && !_courier) ...[

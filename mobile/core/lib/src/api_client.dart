@@ -58,6 +58,9 @@ class ApiClient {
   /// Chamado no 401 com token: se conseguir uma sessão nova devolve true e a requisição é repetida uma vez.
   final Future<bool> Function()? reauthenticate;
 
+  /// Cabeçalhos enviados em toda requisição (o app do entregador manda o ID do aparelho em {@code X-Device-Id}).
+  final Map<String, String> defaultHeaders = {};
+
   static const _timeout = Duration(seconds: 20);
 
   Future<dynamic> get(String path) => _send('GET', path);
@@ -67,7 +70,7 @@ class ApiClient {
     final jwt = token?.call();
     try {
       final res = await _http
-          .get(Uri.parse('$baseUrl$path'), headers: {if (jwt != null) 'Authorization': 'Bearer $jwt'})
+          .get(Uri.parse('$baseUrl$path'), headers: {...defaultHeaders, if (jwt != null) 'Authorization': 'Bearer $jwt'})
           .timeout(const Duration(seconds: 60));
       if (res.statusCode / 100 != 2) throw ApiException(res.statusCode, 'Não foi possível baixar o arquivo.');
       return res.bodyBytes;
@@ -109,6 +112,7 @@ class ApiClient {
   /// [build] cria a requisição de novo a cada tentativa (uma requisição HTTP não pode ser reenviada).
   Future<dynamic> _execute(http.BaseRequest Function() build, {Duration timeout = _timeout, bool retried = false}) async {
     final request = build();
+    request.headers.addAll(defaultHeaders);
     final jwt = token?.call();
     if (jwt != null) request.headers['Authorization'] = 'Bearer $jwt';
     request.headers['Accept'] = 'application/json';

@@ -213,7 +213,7 @@ class _CouriersTab extends StatefulWidget {
 }
 
 class _CouriersTabState extends State<_CouriersTab> {
-  static const _filters = {'PENDING': 'Em análise', 'APPROVED': 'Aprovados', 'BLOCKED': 'Bloqueados'};
+  static const _filters = {'PENDING': 'Em análise', 'APPROVED': 'Aprovados', 'BLOCKED': 'Bloqueados', 'PAYMENTS': 'Assinaturas'};
 
   String _status = 'PENDING';
   var _key = GlobalKey<PagedListState<AdminCourier>>();
@@ -228,6 +228,31 @@ class _CouriersTabState extends State<_CouriersTab> {
         await widget.api.post('/api/platform/couriers/${c.id}/block', {'reason': reason});
       }
       _key.currentState?.refresh();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  /// Cortesia: libera dias de assinatura sem cobrança.
+  Future<void> _grant(AdminCourier c) async {
+    final days = TextEditingController(text: '30');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Dar assinatura a ${c.name}'),
+        content: TextField(controller: days, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Dias', suffixText: 'dias')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Voltar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Liberar')),
+        ],
+      ),
+    );
+    final n = int.tryParse(days.text.trim());
+    days.dispose();
+    if (ok != true || n == null || n < 1 || n > 366) return;
+    try {
+      await widget.api.post('/api/platform/couriers/${c.id}/grant', {'days': n});
+      if (mounted) showInfo(context, 'Assinatura liberada por $n dias.');
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -258,7 +283,7 @@ class _CouriersTabState extends State<_CouriersTab> {
             ),
           ),
         ),
-        body: PagedList<AdminCourier>(
+        body: _status == 'PAYMENTS' ? _PaymentsList(api: widget.api, onChanged: () {}) : PagedList<AdminCourier>(
           key: _key,
           load: (page) async => PageResult.fromJson(
               await widget.api.get('/api/platform/couriers?${Uri(queryParameters: {'page': '$page', 'status': _status}).query}')
@@ -285,11 +310,73 @@ class _CouriersTabState extends State<_CouriersTab> {
                     IconButton(tooltip: 'Bloquear', onPressed: () => _act(c, false), icon: const Icon(Icons.close_rounded)),
                     FilledButton(onPressed: () => _act(c, true), child: const Text('Aprovar')),
                   ])
-                : TextButton(
-                    onPressed: () => _act(c, c.status == 'BLOCKED'),
-                    child: Text(c.status == 'BLOCKED' ? 'Reativar' : 'Bloquear'),
-                  ),
+                : Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (c.status == 'APPROVED')
+                      IconButton(
+                        tooltip: 'Dar dias de assinatura',
+                        onPressed: () => _grant(c),
+                        icon: const Icon(Icons.card_giftcard_rounded),
+                      ),
+                    TextButton(
+                      onPressed: () => _act(c, c.status == 'BLOCKED'),
+                      child: Text(c.status == 'BLOCKED' ? 'Reativar' : 'Bloquear'),
+                    ),
+                  ]),
           ),
+        ),
+      );
+}
+
+/// Cobranças de assinatura esperando a confirmação do pagamento (o entregador pagou o Pix da plataforma).
+class _PaymentsList extends StatefulWidget {
+  const _PaymentsList({required this.api, required this.onChanged});
+
+  final ApiClient api;
+  final VoidCallback onChanged;
+
+  @override
+  State<_PaymentsList> createState() => _PaymentsListState();
+}
+
+class _PaymentsListState extends State<_PaymentsList> {
+  final _key = GlobalKey<PagedListState<AdminPayment>>();
+
+  Future<void> _confirm(AdminPayment p) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar pagamento?'),
+        content: Text('${p.courierName ?? 'Entregador'} · ${money(p.amount)}\nCódigo ${p.reference}\n\nConfira no extrato do Pix antes de confirmar. A assinatura de 30 dias é liberada na hora.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Voltar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Recebi, liberar')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await widget.api.post('/api/platform/courier-payments/${p.id}/confirm');
+      _key.currentState?.refresh();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PagedList<AdminPayment>(
+        key: _key,
+        load: (page) async => PageResult.fromJson(
+            await widget.api.get('/api/platform/courier-payments?${Uri(queryParameters: {'page': '$page'}).query}')
+                as Map<String, dynamic>,
+            AdminPayment.fromJson),
+        empty: const EmptyState(icon: Icons.payments_outlined, text: 'Nenhuma assinatura esperando confirmação.'),
+        separator: const Divider(height: 1),
+        padding: EdgeInsets.zero,
+        itemBuilder: (context, p) => ListTile(
+          leading: const Icon(Icons.payments_rounded),
+          title: Text('${p.courierName ?? 'Entregador'} · ${money(p.amount)}'),
+          subtitle: Text('Código ${p.reference} · ${dateTime(p.createdAt)}'),
+          trailing: FilledButton(onPressed: () => _confirm(p), child: const Text('Confirmar')),
         ),
       );
 }

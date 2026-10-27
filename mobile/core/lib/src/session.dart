@@ -95,6 +95,13 @@ class Session extends ChangeNotifier {
     await _storage.write(key: _emailKey, value: lastEmail);
   }
 
+  /// Entregador se cadastra (fica em análise até a plataforma aprovar) e já entra. [body]: campos do cadastro (veja a API).
+  Future<void> registerCourier(Map<String, Object?> body) async {
+    await _authenticate(api.post('/api/auth/register-courier', body));
+    lastEmail = (body['email'] as String).trim();
+    await _storage.write(key: _emailKey, value: lastEmail);
+  }
+
   /// Lojista abre a loja na plataforma e entra como dono.
   Future<void> registerStore({
     required String storeName,

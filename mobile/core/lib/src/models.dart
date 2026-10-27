@@ -108,7 +108,8 @@ class DeliveryZone {
 
 /// Taxa de entrega para a posição do cliente (loja que cobra por distância).
 class DeliveryQuote {
-  const DeliveryQuote({required this.available, required this.needsLocation, this.distanceKm, this.fee, this.message});
+  const DeliveryQuote(
+      {required this.available, required this.needsLocation, this.distanceKm, this.fee, this.message, this.freight, this.freightPayer});
 
   final bool available;
   final bool needsLocation;
@@ -116,12 +117,18 @@ class DeliveryQuote {
   final double? fee;
   final String? message;
 
+  /// Entregador da plataforma: frete cheio e quem paga (CUSTOMER ou STORE; [fee] já é 0 quando a loja paga).
+  final double? freight;
+  final String? freightPayer;
+
   factory DeliveryQuote.fromJson(Map<String, dynamic> j) => DeliveryQuote(
         available: j['available'] as bool,
         needsLocation: j['needsLocation'] as bool,
         distanceKm: _dn(j['distanceKm']),
         fee: _dn(j['fee']),
         message: j['message'] as String?,
+        freight: _dn(j['freight']),
+        freightPayer: j['freightPayer'] as String?,
       );
 }
 
@@ -663,6 +670,8 @@ class CourierInfo {
     this.deliveryCode,
     this.expiresAt,
     this.canRetry = false,
+    this.freight,
+    this.freightPayer,
   });
 
   /// WAITING (falta pagar/confirmar), OPEN, ACCEPTED, PICKED_UP, DELIVERED, EXPIRED, CANCELED.
@@ -676,6 +685,10 @@ class CourierInfo {
   final DateTime? expiresAt;
   final bool canRetry;
 
+  /// Frete cheio, pago direto ao entregador por [freightPayer] (CUSTOMER na entrega, STORE na coleta).
+  final double? freight;
+  final String? freightPayer;
+
   factory CourierInfo.fromJson(Map<String, dynamic> j) => CourierInfo(
         status: j['status'] as String,
         statusLabel: j['statusLabel'] as String,
@@ -686,6 +699,8 @@ class CourierInfo {
         deliveryCode: j['deliveryCode'] as String?,
         expiresAt: j['expiresAt'] == null ? null : _dt(j['expiresAt']),
         canRetry: j['canRetry'] as bool? ?? false,
+        freight: _dn(j['freight']),
+        freightPayer: j['freightPayer'] as String?,
       );
 }
 
@@ -897,6 +912,7 @@ class CourierProfile {
     required this.online,
     required this.deliveredCount,
     required this.canceledCount,
+    this.cpfMasked,
   });
 
   final int id;
@@ -918,6 +934,9 @@ class CourierProfile {
   final int deliveredCount;
   final int canceledCount;
 
+  /// "***.456.789-**" (o CPF inteiro nunca volta para o app).
+  final String? cpfMasked;
+
   bool get approved => status == 'APPROVED';
 
   factory CourierProfile.fromJson(Map<String, dynamic> j) => CourierProfile(
@@ -937,6 +956,7 @@ class CourierProfile {
         online: j['online'] as bool,
         deliveredCount: j['deliveredCount'] as int,
         canceledCount: j['canceledCount'] as int,
+        cpfMasked: j['cpfMasked'] as String?,
       );
 }
 
@@ -950,6 +970,7 @@ class CourierJobCard {
     this.distanceToStoreKm,
     required this.tripKm,
     required this.fee,
+    this.freightPayer = 'CUSTOMER',
     required this.itemCount,
     required this.expiresAt,
   });
@@ -961,6 +982,9 @@ class CourierJobCard {
   final double? distanceToStoreKm;
   final double tripKm;
   final double fee;
+
+  /// Quem paga o frete direto ao entregador: CUSTOMER (na entrega) ou STORE (na coleta).
+  final String freightPayer;
   final int itemCount;
   final DateTime expiresAt;
 
@@ -972,6 +996,7 @@ class CourierJobCard {
         distanceToStoreKm: _dn(j['distanceToStoreKm']),
         tripKm: _d(j['tripKm']),
         fee: _d(j['fee']),
+        freightPayer: j['freightPayer'] as String? ?? 'CUSTOMER',
         itemCount: j['itemCount'] as int,
         expiresAt: _dt(j['expiresAt']),
       );
@@ -995,6 +1020,7 @@ class CourierJob {
     this.customerPhone,
     required this.tripKm,
     required this.fee,
+    this.freightPayer = 'CUSTOMER',
     required this.itemCount,
     this.deliveredAt,
   });
@@ -1016,9 +1042,11 @@ class CourierJob {
   final String? customerPhone;
   final double tripKm;
   final double fee;
+  final String freightPayer;
   final int itemCount;
   final DateTime? deliveredAt;
 
+  bool get storePays => freightPayer == 'STORE';
   bool get pickedUp => status == 'PICKED_UP';
 
   factory CourierJob.fromJson(Map<String, dynamic> j) => CourierJob(
@@ -1037,6 +1065,7 @@ class CourierJob {
         customerPhone: j['customerPhone'] as String?,
         tripKm: _d(j['tripKm']),
         fee: _d(j['fee']),
+        freightPayer: j['freightPayer'] as String? ?? 'CUSTOMER',
         itemCount: j['itemCount'] as int,
         deliveredAt: j['deliveredAt'] == null ? null : _dt(j['deliveredAt']),
       );
@@ -1111,5 +1140,78 @@ class AdminCourier {
         online: j['online'] as bool,
         deliveredCount: j['deliveredCount'] as int,
         canceledCount: j['canceledCount'] as int,
+      );
+}
+
+
+/// Assinatura do entregador: entregas grátis que sobram, mensalidade e se pode aceitar corrida agora.
+class CourierSubscription {
+  const CourierSubscription({
+    required this.subscribed,
+    this.paidUntil,
+    required this.freeLeft,
+    required this.freeLimit,
+    required this.price,
+    required this.canAccept,
+  });
+
+  final bool subscribed;
+  final DateTime? paidUntil;
+  final int freeLeft;
+  final int freeLimit;
+  final double price;
+  final bool canAccept;
+
+  factory CourierSubscription.fromJson(Map<String, dynamic> j) => CourierSubscription(
+        subscribed: j['subscribed'] as bool,
+        paidUntil: j['paidUntil'] == null ? null : _dt(j['paidUntil']),
+        freeLeft: j['freeLeft'] as int,
+        freeLimit: j['freeLimit'] as int,
+        price: _d(j['price']),
+        canAccept: j['canAccept'] as bool,
+      );
+}
+
+/// Como pagar a assinatura (hoje: Pix para a chave da plataforma com o código de referência).
+class PaymentInstructions {
+  const PaymentInstructions({this.pixKey, this.holder, required this.reference, required this.amount, required this.message});
+
+  final String? pixKey;
+  final String? holder;
+  final String reference;
+  final double amount;
+  final String message;
+
+  bool get configured => pixKey != null && pixKey!.isNotEmpty;
+
+  factory PaymentInstructions.fromJson(Map<String, dynamic> j) => PaymentInstructions(
+        pixKey: j['pixKey'] as String?,
+        holder: j['holder'] as String?,
+        reference: j['reference'] as String,
+        amount: _d(j['amount']),
+        message: j['message'] as String,
+      );
+}
+
+/// Cobrança de assinatura na lista do admin da plataforma.
+class AdminPayment {
+  const AdminPayment({required this.id, required this.courierId, this.courierName, required this.amount, required this.reference, required this.status, required this.createdAt});
+
+  final int id;
+  final int courierId;
+  final String? courierName;
+  final double amount;
+  final String reference;
+  final String status;
+  final DateTime createdAt;
+
+  factory AdminPayment.fromJson(Map<String, dynamic> j) => AdminPayment(
+        id: j['id'] as int,
+        courierId: j['courierId'] as int,
+        courierName: j['courierName'] as String?,
+        amount: _d(j['amount']),
+        reference: j['reference'] as String,
+        status: j['status'] as String,
+        createdAt: _dt(j['createdAt']),
       );
 }

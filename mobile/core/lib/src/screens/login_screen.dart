@@ -9,7 +9,7 @@ import '../widgets.dart';
 /// Entrar e recuperar a senha com o código enviado por e-mail. No app do cliente também cria a conta; no app do
 /// lojista ([forStore]) abre uma loja nova — e é por ele que entram a equipe e o admin da plataforma.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.session, this.popOnSuccess = true, this.forStore = false});
+  const LoginScreen({super.key, required this.session, this.popOnSuccess = true, this.forStore = false, this.allowRegister = true, this.title, this.subtitle, this.icon});
 
   final Session session;
 
@@ -18,6 +18,14 @@ class LoginScreen extends StatefulWidget {
 
   /// App do lojista: sem cadastro de cliente, com "Abrir minha loja".
   final bool forStore;
+
+  /// Sem o botão "Criar conta" de cliente (o app do entregador tem o próprio cadastro).
+  final bool allowRegister;
+
+  /// Marca do app (padrão: Loja Max / Loja Max Lojista).
+  final String? title;
+  final String? subtitle;
+  final IconData? icon;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -90,13 +98,13 @@ class _LoginScreenState extends State<LoginScreen> {
           key: _form,
           child: ListView(padding: const EdgeInsets.all(20), children: [
             const SizedBox(height: 24),
-            Icon(widget.forStore ? Icons.storefront_rounded : Icons.shopping_bag_rounded,
+            Icon(widget.icon ?? (widget.forStore ? Icons.storefront_rounded : Icons.shopping_bag_rounded),
                 size: 64, color: Theme.of(context).colorScheme.primary),
             const SizedBox(height: 8),
-            Text(widget.forStore ? 'Loja Max Lojista' : 'Loja Max',
+            Text(widget.title ?? (widget.forStore ? 'Loja Max Lojista' : 'Loja Max'),
                 textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall),
-            if (widget.forStore)
-              Text('Pedidos, estoque, fotos e promoções da sua loja', textAlign: TextAlign.center,
+            if (widget.subtitle != null || widget.forStore)
+              Text(widget.subtitle ?? 'Pedidos, estoque, fotos e promoções da sua loja', textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: 24),
             if (register) ...[
@@ -170,7 +178,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
               ),
             const SizedBox(height: 8),
-            if (!widget.forStore)
+            if (!widget.forStore && widget.allowRegister)
               TextButton(
                 onPressed: () => setState(() => _mode = register ? _Mode.login : _Mode.register),
                 child: Text(register ? 'Já tenho conta' : 'Não tem conta? Criar agora'),

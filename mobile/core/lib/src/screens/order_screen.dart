@@ -333,6 +333,19 @@ class _CourierCard extends StatelessWidget {
           ]),
           const SizedBox(height: 6),
           Text(info.statusLabel, style: t.bodyLarge?.copyWith(fontWeight: FontWeight.w700)),
+          if (info.freight != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                  info.freightPayer == 'STORE'
+                      ? (team
+                          ? 'Frete de ${money(info.freight!)}: por conta da loja, pago ao entregador na coleta.'
+                          : 'Frete grátis: a loja paga o entregador.')
+                      : (team
+                          ? 'Frete de ${money(info.freight!)}: o cliente paga ao entregador na entrega.'
+                          : 'Frete de ${money(info.freight!)}: pague ao entregador na entrega (dinheiro ou Pix).'),
+                  style: t.bodySmall),
+            ),
           if (info.courierName != null)
             Text([info.courierName!, ?info.vehicle].join(' · '), style: t.bodyMedium),
           if (info.courierPhone != null)

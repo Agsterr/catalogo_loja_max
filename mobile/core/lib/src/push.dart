@@ -118,6 +118,7 @@ class Push {
       payloadFor(
           orderIdText: m.data['orderId'] as String?,
           productIdText: m.data['productId'] as String?,
+          jobIdText: m.data['jobId'] as String?,
           slug: m.data['slug'] as String?);
 
   static Future<void> _opened(RemoteMessage m) async {

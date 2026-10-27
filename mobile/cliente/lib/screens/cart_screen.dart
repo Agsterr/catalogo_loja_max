@@ -407,7 +407,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
                   ],
                 ],
                 const SizedBox(height: 12),
-                Text(_byCourier ? 'Pagamento antecipado' : 'Pagamento (na retirada/entrega)', style: t.titleMedium),
+                Text(_byCourier ? 'Pagamento dos produtos (antecipado)' : 'Pagamento (na retirada/entrega)', style: t.titleMedium),
                 const SizedBox(height: 8),
                 SegmentedButton<String>(
                   segments: [
@@ -420,7 +420,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
                 if (_byCourier)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: Text('A loja combina o pagamento com você. O entregador só sai depois que ela confirmar o pagamento e o pedido.',
+                    child: Text('Os produtos são pagos à loja (ela combina com você). O entregador só sai depois que ela confirmar o pagamento e o pedido.',
                         style: t.bodySmall),
                   ),
                 const SizedBox(height: 12),
@@ -431,8 +431,18 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
                 ),
                 const SizedBox(height: 8),
                 _row('Produtos', money(widget.cart.subtotal)),
-                if (_delivery) _row('Entrega', _byDistance && _quote == null ? 'a calcular' : (_fee == 0 ? 'Grátis' : money(_fee))),
-                _row('Total estimado', money(widget.cart.subtotal + _fee), bold: true),
+                if (_delivery)
+                  _row(_byCourier ? 'Frete (pago ao entregador)' : 'Entrega',
+                      _byDistance && _quote == null ? 'a calcular' : (_fee == 0 ? 'Grátis' : money(_fee))),
+                // entregador da plataforma: o frete vai direto ao entregador, então o total do pedido é só dos produtos
+                _row(_byCourier ? 'Total dos produtos' : 'Total estimado', money(widget.cart.subtotal + (_byCourier ? 0 : _fee)),
+                    bold: true),
+                if (_byCourier && _quote != null && _quote!.available)
+                  Text(
+                      _fee == 0
+                          ? 'Frete grátis: a loja paga o entregador.'
+                          : 'Pague o frete de ${money(_fee)} direto ao entregador, na entrega (dinheiro ou Pix).',
+                      style: t.bodySmall),
                 Text('Os preços são conferidos pela loja na hora do pedido.', style: t.bodySmall),
                 const SizedBox(height: 12),
                 FilledButton(
