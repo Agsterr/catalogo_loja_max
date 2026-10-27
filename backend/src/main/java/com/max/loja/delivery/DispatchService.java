@@ -7,6 +7,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import java.math.BigDecimal;
+
 import com.max.loja.event.StoreEvents;
 import com.max.loja.order.CustomerOrder;
 import com.max.loja.order.OrderService;
@@ -144,14 +146,29 @@ public class DispatchService {
         offer(job);
     }
 
-    /** A loja chama de novo uma corrida que ninguém aceitou. */
+    /** Bônus máximo que a loja pode somar ao frete (R$). */
+    public static final BigDecimal MAX_BONUS = new BigDecimal("50.00");
+
+    /**
+     * A loja chama de novo uma corrida que ninguém aceitou (parada) ou aumenta o bônus de uma que ainda está no mural. O bônus
+     * é dinheiro da loja, pago direto ao entregador na coleta; a plataforma só mostra o valor maior e avisa a região de novo.
+     */
     @Transactional
-    public void retry(Long orderId) {
+    public void retry(Long orderId, BigDecimal bonus) {
         orders.lock(orderId);
         DeliveryJob job = jobs.findByOrderId(orderId).orElseThrow(() -> new NotFoundException("Esta entrega não usa entregador"));
-        if (job.getStatus() != JobStatus.EXPIRED) {
+        BigDecimal newBonus = bonus == null ? job.getBonus() : bonus.setScale(2, java.math.RoundingMode.HALF_UP);
+        if (newBonus.signum() < 0 || newBonus.compareTo(MAX_BONUS) > 0) {
+            throw new BusinessException("O bônus vai de R$ 0 a R$ " + Money.format(MAX_BONUS).replace("R$ ", "") + ".");
+        }
+        if (job.getStatus() == JobStatus.OPEN) {
+            if (newBonus.compareTo(job.getBonus()) <= 0) {
+                throw new BusinessException("A corrida já está no mural. Para chamar mais rápido, aumente o bônus.");
+            }
+        } else if (job.getStatus() != JobStatus.EXPIRED) {
             throw new BusinessException("Esta corrida não está parada: " + job.getStatus().label().toLowerCase() + ".");
         }
+        job.setBonus(newBonus);
         reopen(job);
     }
 
@@ -159,8 +176,11 @@ public class DispatchService {
     private void offer(DeliveryJob job) {
         List<Long> ids = couriers.nearbyOnline(job.getPickupLat(), job.getPickupLng(),
                 LocalDateTime.now(clock).minus(props.freshPosition()), props.pushLimit());
-        push.toUsers(ids, "offer:" + job.getId() + ":" + job.getOffers(), "Nova entrega: " + Money.format(job.getCourierFee()),
-                job.getStoreName() + " · " + job.getDistanceKm().toPlainString().replace('.', ',') + " km até o cliente",
+        boolean bonus = job.getBonus().signum() > 0;
+        push.toUsers(ids, "offer:" + job.getId() + ":" + job.getOffers(),
+                "Nova entrega: " + Money.format(job.getCourierFee().add(job.getBonus())) + (bonus ? " (com bônus)" : ""),
+                job.getStoreName() + " · " + job.getDistanceKm().toPlainString().replace('.', ',') + " km até o cliente"
+                        + (bonus ? " · bônus de " + Money.format(job.getBonus()) + " pago pela loja" : ""),
                 data(job, "JOB_OFFER"));
     }
 

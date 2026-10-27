@@ -55,26 +55,33 @@ public final class CourierDtos {
     public record CodeRequest(@NotBlank @Size(max = 6) String code) {
     }
 
+    /** Posição do entregador durante a corrida (o app manda a cada ~15 s enquanto a corrida está ativa). */
+    public record LocationRequest(@NotNull @DecimalMin("-90") @DecimalMax("90") Double lat,
+                                  @NotNull @DecimalMin("-180") @DecimalMax("180") Double lng) {
+    }
+
     public record CancelRequest(@Size(max = 300) String reason) {
     }
 
     public record ProfileResponse(Long id, String name, String email, String phone, Vehicle vehicle, String vehicleLabel,
                                   String plate, String city, String state, Double baseLat, Double baseLng, int radiusKm,
                                   CourierStatus status, String statusReason, boolean online, int deliveredCount,
-                                  int canceledCount, LocalDateTime createdAt, String cpfMasked) {
+                                  int canceledCount, LocalDateTime createdAt, String cpfMasked, Double ratingAvg,
+                                  int ratingCount) {
     }
 
     /** Corrida no mural: sem o endereço nem o nome do cliente (só depois do aceite). */
     public record JobCard(Long id, String storeName, String pickupAddress, String city, Double distanceToStoreKm,
-                          BigDecimal tripKm, BigDecimal fee, String freightPayer, int itemCount, LocalDateTime createdAt,
-                          LocalDateTime expiresAt) {
+                          BigDecimal tripKm, BigDecimal fee, BigDecimal bonus, String freightPayer, int itemCount,
+                          LocalDateTime createdAt, LocalDateTime expiresAt) {
     }
 
     /** Corrida aceita: endereço e telefone do cliente liberados. Os códigos nunca vêm aqui. */
     public record JobDetail(Long id, String orderCode, String status, String statusLabel, String storeName,
                             String pickupAddress, double pickupLat, double pickupLng, String dropoffAddress,
                             Double dropoffLat, Double dropoffLng, String customerName, String customerPhone,
-                            BigDecimal tripKm, BigDecimal fee, String freightPayer, int itemCount, LocalDateTime acceptedAt,
+                            BigDecimal tripKm, BigDecimal fee, BigDecimal bonus, String freightPayer, int itemCount,
+                            LocalDateTime acceptedAt,
                             LocalDateTime pickedUpAt, LocalDateTime deliveredAt) {
     }
 
@@ -87,7 +94,7 @@ public final class CourierDtos {
     /** Linha da lista do admin da plataforma. */
     public record AdminCourier(Long id, String name, String email, String phone, Vehicle vehicle, String plate,
                                String city, String state, CourierStatus status, String statusReason, boolean online,
-                               int deliveredCount, int canceledCount, LocalDateTime createdAt) {
+                               int deliveredCount, int canceledCount, LocalDateTime createdAt, Double ratingAvg, int ratingCount) {
     }
 
     public record ReasonRequest(@Size(max = 300) String reason) {

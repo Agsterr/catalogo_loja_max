@@ -13,6 +13,7 @@ import java.util.Objects;
 import com.max.loja.auth.AppUser;
 import com.max.loja.auth.AppUserRepository;
 import com.max.loja.catalog.ProductVariant;
+import com.max.loja.delivery.CourierRatingRepository;
 import com.max.loja.delivery.CourierRepository;
 import com.max.loja.delivery.DeliveryJob;
 import com.max.loja.delivery.DeliveryJobRepository;
@@ -68,6 +69,7 @@ public class OrderService {
     private final ProductPhotoRepository photos;
     private final DeliveryJobRepository jobs;
     private final CourierRepository couriers;
+    private final CourierRatingRepository ratings;
     private final ApplicationEventPublisher events;
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
@@ -75,7 +77,8 @@ public class OrderService {
     public OrderService(OrderRepository orders, ProductVariantRepository variants, AppUserRepository users,
                         StockService stock, PricingService pricing, StoreService stores, StaffService staff,
                         ProductPhotoRepository photos, DeliveryJobRepository jobs, CourierRepository couriers,
-                        ApplicationEventPublisher events, Clock clock) {
+                        CourierRatingRepository ratings, ApplicationEventPublisher events, Clock clock) {
+        this.ratings = ratings;
         this.jobs = jobs;
         this.couriers = couriers;
         this.orders = orders;
@@ -340,6 +343,12 @@ public class OrderService {
         events.publishEvent(new StoreEvents.OrderStatusChanged(order.getId(), from, OrderStatus.CANCELED, byCustomer, actorId));
     }
 
+    /** Pedido do cliente (a loja vem do endereço da URL); 404 se for de outra pessoa. */
+    @Transactional(readOnly = true)
+    public CustomerOrder findForCustomer(Long customerId, Long orderId) {
+        return orders.findByIdAndCustomerId(orderId, customerId).orElseThrow(() -> new NotFoundException("Pedido não encontrado"));
+    }
+
     /** Pedido travado para alterar (mesma ordem de lock em todos os caminhos: pedido primeiro). */
     public CustomerOrder lock(Long orderId) {
         return orders.lock(orderId).orElseThrow(() -> new NotFoundException("Pedido não encontrado"));
@@ -422,16 +431,18 @@ public class OrderService {
             // ainda não abriu: falta o pagamento e/ou a confirmação da loja
             String wait = !o.isPaid() ? "Aguardando o pagamento" : "Aguardando a loja confirmar";
             return new CourierInfo("WAITING", wait, null, null, null, null, null, null, false, o.getCourierFreight(),
-                    o.getDeliveryFee().signum() > 0 ? "CUSTOMER" : "STORE");
+                    o.getDeliveryFee().signum() > 0 ? "CUSTOMER" : "STORE", BigDecimal.ZERO, null, 0, false, false);
         }
         var courier = job.getCourierId() == null ? null : couriers.findById(job.getCourierId()).orElse(null);
         String name = courier == null ? null : users.findById(courier.getUserId()).map(AppUser::getName).orElse(null);
         boolean shown = job.getStatus().active();
+        boolean rated = ratings.existsByOrderId(o.getId());
         return new CourierInfo(job.getStatus().name(), job.getStatus().label(), shown || job.getStatus() == JobStatus.DELIVERED ? name : null,
                 shown ? courier.getPhone() : null, shown && courier != null ? courier.getVehicle().label() : null,
                 forTeam && shown ? job.getPickupCode() : null, !forTeam && job.getStatus().active() ? job.getDeliveryCode() : null,
                 job.getStatus() == JobStatus.OPEN ? job.getExpiresAt() : null, forTeam && job.getStatus() == JobStatus.EXPIRED,
-                o.getCourierFreight(), job.getFreightPayer());
+                o.getCourierFreight(), job.getFreightPayer(), job.getBonus(), courier == null ? null : courier.ratingAvg(),
+                courier == null ? 0 : courier.getRatingCount(), !forTeam && job.getStatus() == JobStatus.DELIVERED && !rated, rated);
     }
 
     private String cover(Long productId) {

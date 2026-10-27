@@ -93,6 +93,13 @@ public class CourierController {
         return service.deliver(CurrentUser.of(jwt).id(), id, req.code(), deviceId);
     }
 
+    /** Posição ao vivo durante a corrida (o cliente e a loja acompanham). */
+    @PostMapping("/api/courier/jobs/{id}/location")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void location(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id, @Valid @RequestBody CourierDtos.LocationRequest req) {
+        service.updateLocation(CurrentUser.of(jwt).id(), id, req.lat(), req.lng());
+    }
+
     @PostMapping("/api/courier/jobs/{id}/cancel")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id, @RequestBody(required = false) CancelRequest req) {

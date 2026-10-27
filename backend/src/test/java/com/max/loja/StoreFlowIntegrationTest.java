@@ -722,11 +722,35 @@ class StoreFlowIntegrationTest {
         assertThat(forStore.get("courier").get("deliveryCode").isNull()).isTrue();
         assertThat(forCustomer.get("courier").get("pickupCode").isNull()).isTrue();
         call(ze, withDevice(post("/api/courier/jobs/" + jobId + "/deliver"), deviceA), Map.of("code", deliveryCode), status().isUnprocessableEntity()); // antes de coletar
+        // rastreio: a loja vê desde o aceite; o cliente só depois da coleta; só o entregador da corrida manda a posição
+        call(bia, post("/api/courier/jobs/" + jobId + "/location"), Map.of("lat", -23.55, "lng", -46.63), status().isUnprocessableEntity());
+        call(ze, post("/api/courier/jobs/" + jobId + "/location"), Map.of("lat", -23.5700, "lng", -46.6500), status().isNoContent());
+        JsonNode toStore = call(owner, get("/api/store/orders/" + orderId + "/tracking"), null, status().isOk());
+        assertThat(toStore.get("active").asBoolean()).isTrue();
+        assertThat(toStore.get("target").asText()).isEqualTo("LOJA");
+        assertThat(toStore.get("etaMinutes").asInt()).isPositive();
+        assertThat(call(carla, get(shop.orders() + "/" + orderId + "/tracking"), null, status().isOk()).get("active").asBoolean()).isFalse();
         call(ze, post("/api/courier/jobs/" + jobId + "/pickup"), Map.of("code", wrong(pickupCode)), status().isUnprocessableEntity());
         call(ze, post("/api/courier/jobs/" + jobId + "/pickup"), Map.of("code", pickupCode), status().isOk());
         assertThat(call(owner, get("/api/store/orders/" + orderId), null, status().isOk()).get("status").asText()).isEqualTo("SHIPPED");
+        call(ze, post("/api/courier/jobs/" + jobId + "/location"), Map.of("lat", -23.5600, "lng", -46.6400), status().isNoContent());
+        JsonNode toCustomer = call(carla, get(shop.orders() + "/" + orderId + "/tracking"), null, status().isOk());
+        assertThat(toCustomer.get("active").asBoolean()).isTrue();
+        assertThat(toCustomer.get("target").asText()).isEqualTo("CLIENTE");
+        assertThat(toCustomer.get("courierName").asText()).isEqualTo("Zé Moto");
+        assertThat(toCustomer.get("stale").asBoolean()).isFalse();
+        call(register("Outra pessoa"), get(shop.orders() + "/" + orderId + "/tracking"), null, status().isNotFound());
         call(ze, withDevice(post("/api/courier/jobs/" + jobId + "/deliver"), deviceA), Map.of("code", deliveryCode), status().isOk());
         assertThat(call(carla, get(shop.orders() + "/" + orderId), null, status().isOk()).get("status").asText()).isEqualTo("DELIVERED");
+        call(ze, post("/api/courier/jobs/" + jobId + "/location"), Map.of("lat", -23.56, "lng", -46.64), status().isUnprocessableEntity()); // já entregue
+        // avaliação: só depois de entregue, uma vez, 1 a 5
+        assertThat(call(carla, get(shop.orders() + "/" + orderId), null, status().isOk()).get("courier").get("canRate").asBoolean()).isTrue();
+        call(carla, post(shop.orders() + "/" + orderId + "/rate-courier"), Map.of("stars", 6), status().isBadRequest());
+        JsonNode rated = call(carla, post(shop.orders() + "/" + orderId + "/rate-courier"), Map.of("stars", 5, "comment", "Rápido e educado"), status().isOk());
+        assertThat(rated.get("ratingAvg").asDouble()).isEqualTo(5.0);
+        call(carla, post(shop.orders() + "/" + orderId + "/rate-courier"), Map.of("stars", 1), status().isUnprocessableEntity());
+        assertThat(call(carla, get(shop.orders() + "/" + orderId), null, status().isOk()).get("courier").get("rated").asBoolean()).isTrue();
+        assertThat(call(ze, get("/api/courier/me"), null, status().isOk()).get("ratingCount").asInt()).isEqualTo(1);
         JsonNode earnings = call(ze, get("/api/courier/earnings"), null, status().isOk());
         assertThat(earnings.get("today").get("count").asLong()).isEqualTo(1);
         assertThat(earnings.get("today").get("total").decimalValue()).isEqualByComparingTo("6.00");
@@ -753,8 +777,16 @@ class StoreFlowIntegrationTest {
         jdbc.update("update delivery_job set expires_at = ? where id = ?", LocalDateTime.now(clock).minusMinutes(1), job2);
         dispatch.expireOld();
         assertThat(call(owner, get("/api/store/orders/" + second), null, status().isOk()).get("courier").get("canRetry").asBoolean()).isTrue();
-        call(owner, post("/api/store/orders/" + second + "/courier/retry"), null, status().isNoContent());
-        assertThat(call(ze, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isEqualTo(1);
+        call(owner, post("/api/store/orders/" + second + "/courier/retry"), Map.of("bonus", 80), status().isBadRequest());
+        call(owner, post("/api/store/orders/" + second + "/courier/retry"), Map.of("bonus", 5), status().isNoContent());
+        JsonNode withBonus = call(ze, get("/api/courier/jobs/open"), null, status().isOk());
+        assertThat(withBonus.get("total").asLong()).isEqualTo(1);
+        assertThat(withBonus.get("items").get(0).get("bonus").decimalValue()).isEqualByComparingTo("5.00");
+        // no mural só dá para aumentar o bônus
+        call(owner, post("/api/store/orders/" + second + "/courier/retry"), Map.of("bonus", 5), status().isUnprocessableEntity());
+        call(owner, post("/api/store/orders/" + second + "/courier/retry"), Map.of("bonus", 8), status().isNoContent());
+        assertThat(call(ze, get("/api/courier/jobs/open"), null, status().isOk()).get("items").get(0).get("bonus").decimalValue())
+                .isEqualByComparingTo("8.00");
 
         // assinatura: o Zé gera a cobrança (a plataforma só mostra como pagar), o admin confirma e ele volta a aceitar
         JsonNode pay = call(ze, post("/api/courier/subscription/checkout"), null, status().isOk());

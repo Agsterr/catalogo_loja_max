@@ -48,9 +48,18 @@ public interface DeliveryJobRepository extends JpaRepository<DeliveryJob, Long> 
             where id = :id and status = 'OPEN' and expires_at > :now""", nativeQuery = true)
     int accept(@Param("id") Long id, @Param("courier") Long courierId, @Param("now") LocalDateTime now);
 
+    /** Posição ao vivo do entregador na corrida dele (só a última fica guardada). */
+    @org.springframework.transaction.annotation.Transactional
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+            update delivery_job set courier_lat = :lat, courier_lng = :lng, courier_at = :now
+            where id = :id and courier_id = :courier and status in ('ACCEPTED', 'PICKED_UP')""", nativeQuery = true)
+    int updateLocation(@Param("id") Long id, @Param("courier") Long courierId, @Param("lat") double lat, @Param("lng") double lng,
+                       @Param("now") LocalDateTime now);
+
     /** Ganhos: soma e quantidade das entregas concluídas desde {@code since}. */
     @Query(value = """
-            select coalesce(sum(courier_fee), 0) as total, count(*) as count from delivery_job
+            select coalesce(sum(courier_fee + bonus), 0) as total, count(*) as count from delivery_job
             where courier_id = :courier and status = 'DELIVERED' and delivered_at >= :since""", nativeQuery = true)
     Earnings earnings(@Param("courier") Long courierId, @Param("since") LocalDateTime since);
 

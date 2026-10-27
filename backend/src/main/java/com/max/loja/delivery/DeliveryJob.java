@@ -91,6 +91,15 @@ public class DeliveryJob {
 
     private Long courierId;
 
+    /** Bônus que a loja soma ao frete quando ninguém aceita (pago direto ao entregador, na coleta). */
+    @Column(nullable = false)
+    private BigDecimal bonus = BigDecimal.ZERO;
+
+    /** Última posição do entregador durante a corrida (só a mais recente; o histórico não é guardado). */
+    private Double courierLat;
+    private Double courierLng;
+    private LocalDateTime courierAt;
+
     /** Quantas vezes foi ao mural (reaberta quando o entregador desiste ou a loja chama de novo). */
     private int offers = 1;
 

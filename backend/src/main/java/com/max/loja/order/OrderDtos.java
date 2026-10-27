@@ -56,7 +56,8 @@ public final class OrderDtos {
      */
     public record CourierInfo(String status, String statusLabel, String courierName, String courierPhone, String vehicle,
                               String pickupCode, String deliveryCode, LocalDateTime expiresAt, boolean canRetry,
-                              BigDecimal freight, String freightPayer) {
+                              BigDecimal freight, String freightPayer, BigDecimal bonus, Double courierRating,
+                              int courierRatings, boolean canRate, boolean rated) {
     }
 
     public record OrderSummary(Long id, String code, OrderStatus status, String statusLabel, DeliveryMethod deliveryMethod,

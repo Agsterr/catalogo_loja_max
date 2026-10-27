@@ -162,7 +162,7 @@ public class CourierService {
                 ref[1] + dLng, LocalDateTime.now(clock), PageResponse.request(page, size, Sort.unsorted()));
         return PageResponse.of(result, j -> new JobCard(j.getId(), j.getStoreName(), j.getPickupAddress(), j.getCity(),
                 Math.round(km(ref[0], ref[1], j.getPickupLat(), j.getPickupLng()) * 10) / 10.0, j.getDistanceKm(),
-                j.getCourierFee(), j.getFreightPayer(), j.getItemCount(), j.getCreatedAt(), j.getExpiresAt()));
+                j.getCourierFee(), j.getBonus(), j.getFreightPayer(), j.getItemCount(), j.getCreatedAt(), j.getExpiresAt()));
     }
 
     @Transactional(readOnly = true)
@@ -248,6 +248,17 @@ public class CourierService {
         });
     }
 
+    /**
+     * Posição ao vivo durante a corrida: só a última fica guardada e só enquanto a corrida está ativa. No máximo ~1 envio a
+     * cada 5 s por corrida (o limite conta fora de transação, como o dos códigos).
+     */
+    public void updateLocation(Long courierId, Long jobId, double lat, double lng) {
+        rateLimiter.check("job-location:" + jobId + ":" + courierId, 150);
+        if (jobs.updateLocation(jobId, courierId, lat, lng, LocalDateTime.now(clock)) == 0) {
+            throw new BusinessException("Esta corrida não está em andamento.");
+        }
+    }
+
     /** Desistência antes de coletar: a corrida volta ao mural e a loja é avisada. Depois da coleta, só pelo suporte. */
     public void cancel(Long courierId, Long jobId, String reason) {
         DeliveryJob peek = mine(courierId, jobId);
@@ -327,7 +338,7 @@ public class CourierService {
             AppUser u = byId.get(c.getUserId());
             return new AdminCourier(c.getUserId(), u == null ? "?" : u.getName(), u == null ? "" : u.getEmail(), c.getPhone(),
                     c.getVehicle(), c.getPlate(), c.getCity(), c.getState(), c.getStatus(), c.getStatusReason(), c.isOnline(),
-                    c.getDeliveredCount(), c.getCanceledCount(), c.getCreatedAt());
+                    c.getDeliveredCount(), c.getCanceledCount(), c.getCreatedAt(), c.ratingAvg(), c.getRatingCount());
         });
     }
 
@@ -415,7 +426,7 @@ public class CourierService {
         return new ProfileResponse(c.getUserId(), u.getName(), u.getEmail(), c.getPhone(), c.getVehicle(), c.getVehicle().label(),
                 c.getPlate(), c.getCity(), c.getState(), c.getBaseLat(), c.getBaseLng(), c.getRadiusKm(), c.getStatus(),
                 c.getStatusReason(), c.isOnline(), c.getDeliveredCount(), c.getCanceledCount(), c.getCreatedAt(),
-                maskedCpf(c));
+                maskedCpf(c), c.ratingAvg(), c.getRatingCount());
     }
 
     /** CPF mascarado; se a chave de criptografia foi trocada e não dá mais para ler, o app só não mostra. */
@@ -433,7 +444,7 @@ public class CourierService {
         return new JobDetail(j.getId(), j.getOrderCode(), j.getStatus().name(), j.getStatus().label(), j.getStoreName(),
                 j.getPickupAddress(), j.getPickupLat(), j.getPickupLng(), reveal ? j.getDropoffAddress() : null,
                 reveal ? j.getDropoffLat() : null, reveal ? j.getDropoffLng() : null, reveal ? j.getCustomerName() : null,
-                j.getStatus().active() ? j.getCustomerPhone() : null, j.getDistanceKm(), j.getCourierFee(), j.getFreightPayer(), j.getItemCount(),
+                j.getStatus().active() ? j.getCustomerPhone() : null, j.getDistanceKm(), j.getCourierFee(), j.getBonus(), j.getFreightPayer(), j.getItemCount(),
                 j.getAcceptedAt(), j.getPickedUpAt(), j.getDeliveredAt());
     }
 

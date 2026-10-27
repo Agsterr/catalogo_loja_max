@@ -58,6 +58,10 @@ public class Courier {
     /** Entregas grátis já usadas por este CPF (o aparelho tem o contador dele). */
     private int freeUsed;
 
+    /** Soma e quantidade das estrelas recebidas (média = soma / quantidade). */
+    private int ratingSum;
+    private int ratingCount;
+
     private int deliveredCount;
     private int canceledCount;
 
@@ -68,5 +72,10 @@ public class Courier {
 
     public boolean approved() {
         return status == CourierStatus.APPROVED;
+    }
+
+    /** Média de estrelas (nulo sem avaliações). */
+    public Double ratingAvg() {
+        return ratingCount == 0 ? null : Math.round(ratingSum * 10.0 / ratingCount) / 10.0;
     }
 }
