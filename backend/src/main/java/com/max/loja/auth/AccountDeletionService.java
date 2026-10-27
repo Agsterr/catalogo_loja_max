@@ -47,6 +47,7 @@ public class AccountDeletionService {
         jdbc.update("update orders set address = null, notes = null where customer_id = ?", userId);
         jdbc.update("delete from notification where user_id = ?", userId);
         jdbc.update("delete from password_reset where user_id = ?", userId);
+        jdbc.update("delete from customer_address where user_id = ?", userId);
         devices.deleteByUserId(userId);
         user.setActive(false);
         user.setName("Conta excluída");

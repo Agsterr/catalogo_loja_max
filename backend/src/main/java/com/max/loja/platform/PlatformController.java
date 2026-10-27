@@ -14,6 +14,7 @@ import com.max.loja.security.AuditService;
 import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.NotFoundException;
 import com.max.loja.shared.PageResponse;
+import com.max.loja.shared.Search;
 import com.max.loja.store.Store;
 import com.max.loja.store.StoreRepository;
 import jakarta.validation.Valid;
@@ -63,7 +64,7 @@ public class PlatformController {
     public PageResponse<StoreAdminResponse> stores(@RequestParam(required = false) String q,
                                                    @RequestParam(required = false) Integer page,
                                                    @RequestParam(required = false) Integer size) {
-        return PageResponse.of(stores.search(q == null ? "" : q.trim(), true, PageResponse.request(page, size, Sort.by("name"))),
+        return PageResponse.of(stores.search(Search.like(q == null ? "" : q), true, PageResponse.request(page, size, Sort.by("name"))),
                 this::response);
     }
 

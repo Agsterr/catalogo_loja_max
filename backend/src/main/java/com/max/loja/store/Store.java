@@ -27,6 +27,7 @@ public class Store {
     @Column(nullable = false)
     private String name;
 
+    private String description;
     private String whatsapp;
     private String instagram;
     private String pickupAddress;
@@ -38,6 +39,15 @@ public class Store {
 
     /** Pedido a partir deste valor não paga entrega; nulo = sempre paga. */
     private BigDecimal freeDeliveryFrom;
+
+    /** Logo (quadrado) e capa da vitrine, no R2 (ou disco). */
+    private String logoUrl;
+    private String logoKey;
+    private String coverUrl;
+    private String coverKey;
+
+    /** Horário por dia da semana em JSON (veja {@code StoreHours}); nulo = não informado. */
+    private String openingHours;
 
     /** Bloqueada pelo administrador da plataforma. */
     private boolean blocked;

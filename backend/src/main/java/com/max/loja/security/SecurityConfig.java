@@ -63,6 +63,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/store/reports/**", "/api/store/users/**", "/api/store/promotions/**",
                                 "/api/store/audit/**").hasRole("OWNER")
                         .requestMatchers(HttpMethod.PUT, "/api/store/settings").hasRole("OWNER")
+                        .requestMatchers(HttpMethod.POST, "/api/store/settings/**").hasRole("OWNER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/store/settings/**").hasRole("OWNER")
                         .requestMatchers(HttpMethod.POST, "/api/store/customers/*/block", "/api/store/customers/*/unblock")
                         .hasRole("OWNER")
                         .requestMatchers("/api/store/**").hasAnyRole("OWNER", "STAFF")

@@ -1,12 +1,18 @@
 package com.max.loja.store;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.List;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.max.loja.security.AuditService;
 import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.NotFoundException;
 import com.max.loja.shared.PageResponse;
+import com.max.loja.shared.Search;
 import com.max.loja.shared.TenantContext;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
@@ -19,38 +25,50 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class StoreService {
 
-    public record StoreRequest(@NotBlank @Size(max = 120) String name, @Size(max = 30) String whatsapp,
+    public record StoreRequest(@NotBlank @Size(max = 120) String name, @Size(max = 500) String description,
+                               @Size(max = 30) String whatsapp,
                                @Size(max = 80) String instagram, @Size(max = 300) String pickupAddress,
                                boolean pickupEnabled, boolean deliveryEnabled,
                                @NotNull @DecimalMin("0") @Digits(integer = 8, fraction = 2) BigDecimal deliveryFee,
-                               @DecimalMin("0") @Digits(integer = 8, fraction = 2) BigDecimal freeDeliveryFrom) {
+                               @DecimalMin("0") @Digits(integer = 8, fraction = 2) BigDecimal freeDeliveryFrom,
+                               @Size(min = 7, max = 7) @Valid List<StoreHours.Day> openingHours) {
     }
 
-    public record StoreResponse(Long id, String slug, String name, String whatsapp, String instagram, String pickupAddress,
-                                boolean pickupEnabled, boolean deliveryEnabled, BigDecimal deliveryFee,
-                                BigDecimal freeDeliveryFrom) {
-
-        public static StoreResponse from(Store s) {
-            return new StoreResponse(s.getId(), s.getSlug(), s.getName(), s.getWhatsapp(), s.getInstagram(),
-                    s.getPickupAddress(), s.isPickupEnabled(), s.isDeliveryEnabled(), s.getDeliveryFee(),
-                    s.getFreeDeliveryFrom());
-        }
+    /** {@code status}: aberta/fechada agora (nulo sem horário informado); {@code hours}: linhas para mostrar. */
+    public record StoreResponse(Long id, String slug, String name, String description, String whatsapp, String instagram,
+                                String pickupAddress, boolean pickupEnabled, boolean deliveryEnabled, BigDecimal deliveryFee,
+                                BigDecimal freeDeliveryFrom, String logoUrl, String coverUrl,
+                                List<StoreHours.Day> openingHours, List<String> hours, StoreHours.Status status) {
     }
 
     /** Cartão da busca de lojas no app do cliente. */
-    public record StoreCard(Long id, String slug, String name, String instagram) {
-
-        static StoreCard from(Store s) {
-            return new StoreCard(s.getId(), s.getSlug(), s.getName(), s.getInstagram());
-        }
+    public record StoreCard(Long id, String slug, String name, String instagram, String description, String logoUrl,
+                            StoreHours.Status status) {
     }
 
     private final StoreRepository stores;
     private final AuditService audit;
+    private final ObjectMapper json;
+    private final Clock clock;
 
-    public StoreService(StoreRepository stores, AuditService audit) {
+    public StoreService(StoreRepository stores, AuditService audit, ObjectMapper json, Clock clock) {
         this.stores = stores;
         this.audit = audit;
+        this.json = json;
+        this.clock = clock;
+    }
+
+    public StoreResponse response(Store s) {
+        List<StoreHours.Day> days = StoreHours.parse(s.getOpeningHours(), json);
+        return new StoreResponse(s.getId(), s.getSlug(), s.getName(), s.getDescription(), s.getWhatsapp(), s.getInstagram(),
+                s.getPickupAddress(), s.isPickupEnabled(), s.isDeliveryEnabled(), s.getDeliveryFee(), s.getFreeDeliveryFrom(),
+                s.getLogoUrl(), s.getCoverUrl(), days, StoreHours.lines(days),
+                StoreHours.status(days, LocalDateTime.now(clock)));
+    }
+
+    private StoreCard card(Store s) {
+        return new StoreCard(s.getId(), s.getSlug(), s.getName(), s.getInstagram(), s.getDescription(), s.getLogoUrl(),
+                StoreHours.status(StoreHours.parse(s.getOpeningHours(), json), LocalDateTime.now(clock)));
     }
 
     /** Loja da requisição (JWT da equipe ou slug da URL). */
@@ -61,8 +79,8 @@ public class StoreService {
 
     @Transactional(readOnly = true)
     public PageResponse<StoreCard> search(String q, Integer page, Integer size) {
-        return PageResponse.of(stores.search(q == null ? "" : q.trim(), false, PageResponse.request(page, size, Sort.by("name"))),
-                StoreCard::from);
+        return PageResponse.of(stores.search(Search.like(q == null ? "" : q), false, PageResponse.request(page, size, Sort.by("name"))),
+                this::card);
     }
 
     @Transactional
@@ -72,6 +90,8 @@ public class StoreService {
         }
         Store s = current();
         s.setName(req.name().trim());
+        s.setDescription(blank(req.description()));
+        s.setOpeningHours(StoreHours.write(req.openingHours(), json));
         s.setWhatsapp(blank(req.whatsapp()));
         s.setInstagram(blank(req.instagram()));
         s.setPickupAddress(blank(req.pickupAddress()));
@@ -80,7 +100,7 @@ public class StoreService {
         s.setDeliveryFee(req.deliveryFee());
         s.setFreeDeliveryFrom(req.freeDeliveryFrom());
         audit.record(AuditService.STORE_SETTINGS, actorId, null);
-        return StoreResponse.from(s);
+        return response(s);
     }
 
     private static String blank(String s) {

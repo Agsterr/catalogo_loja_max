@@ -32,6 +32,7 @@ import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.Money;
 import com.max.loja.shared.NotFoundException;
 import com.max.loja.shared.PageResponse;
+import com.max.loja.shared.Search;
 import com.max.loja.auth.StaffService;
 import com.max.loja.store.Store;
 import com.max.loja.store.StoreService;
@@ -224,9 +225,9 @@ public class OrderService {
                 where.add(root.get("status").in(OrderStatus.DELIVERED, OrderStatus.CANCELED).not());
             }
             if (q != null && !q.isBlank()) {
-                String like = "%" + q.trim().toLowerCase().replace("%", "") + "%";
+                String like = Search.like(q);
                 var customer = root.join("customer");
-                where.add(cb.or(cb.like(cb.lower(root.get("code")), like), cb.like(cb.lower(customer.get("name")), like),
+                where.add(cb.or(cb.like(cb.lower(root.get("code")), like), cb.like(Search.plain(cb, customer.get("name")), like),
                         cb.like(customer.get("phone"), like)));
             }
             return cb.and(where.toArray(Predicate[]::new));

@@ -23,6 +23,7 @@ import com.max.loja.security.AuditService;
 import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.NotFoundException;
 import com.max.loja.shared.PageResponse;
+import com.max.loja.shared.Search;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
@@ -92,8 +93,9 @@ public class ProductService {
                 where.add(cb.isTrue(root.get("featured")));
             }
             if (f.q() != null && !f.q().isBlank()) {
-                String like = "%" + f.q().trim().toLowerCase(Locale.ROOT).replace("%", "").replace("_", "") + "%";
-                where.add(cb.or(cb.like(cb.lower(root.get("name")), like), cb.like(cb.lower(root.get("brand")), like)));
+                String like = Search.like(f.q());
+                where.add(cb.or(cb.like(Search.plain(cb, root.get("name")), like),
+                        cb.like(Search.plain(cb, root.get("brand")), like)));
             }
             if (f.onSale()) {
                 // promoções em andamento já carregadas: viram condições simples (sem subconsulta)
@@ -172,6 +174,7 @@ public class ProductService {
         }
         p.setName(req.name().trim());
         p.setDescription(req.description() == null || req.description().isBlank() ? null : req.description().trim());
+        p.setSizeChart(req.sizeChart() == null || req.sizeChart().isBlank() ? null : req.sizeChart().trim());
         p.setDepartment(req.department());
         p.setCategory(category);
         p.setBrand(req.brand() == null || req.brand().isBlank() ? null : req.brand().trim());

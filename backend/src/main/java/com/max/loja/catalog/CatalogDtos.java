@@ -46,6 +46,7 @@ public final class CatalogDtos {
     public record ProductRequest(
             @NotBlank @Size(max = 150) String name,
             @Size(max = 4000) String description,
+            @Size(max = 4000) String sizeChart,
             @NotNull Department department,
             Long categoryId,
             @Size(max = 80) String brand,
@@ -69,7 +70,8 @@ public final class CatalogDtos {
     }
 
     /** Produto completo (tela do produto e edição). */
-    public record ProductResponse(Long id, String name, String description, Department department, String departmentLabel,
+    public record ProductResponse(Long id, String name, String description, String sizeChart, Department department,
+                                  String departmentLabel,
                                   Long categoryId, String categoryName, String brand, BigDecimal price,
                                   BigDecimal salePrice, BigDecimal finalPrice, int discountPercent, String promotion,
                                   int minStock, boolean active, boolean featured, int totalStock,
@@ -77,7 +79,7 @@ public final class CatalogDtos {
 
         static ProductResponse from(Product p, Price price, boolean onlyAvailable) {
             Category c = p.getCategory();
-            return new ProductResponse(p.getId(), p.getName(), p.getDescription(), p.getDepartment(),
+            return new ProductResponse(p.getId(), p.getName(), p.getDescription(), p.getSizeChart(), p.getDepartment(),
                     p.getDepartment().label(), c != null ? c.getId() : null, c != null ? c.getName() : null, p.getBrand(),
                     price.price(), p.getSalePrice(), price.finalPrice(), price.discountPercent(), price.promotion(),
                     p.getMinStock(), p.isActive(), p.isFeatured(), p.totalStock(),

@@ -3,7 +3,9 @@ package com.max.loja.media;
 import java.util.List;
 
 import com.max.loja.media.ProductPhotoService.PhotoResponse;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -37,8 +39,17 @@ public class ProductPhotoController {
 
     @PostMapping(path = "/api/store/products/{productId}/photos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public PhotoResponse upload(@PathVariable Long productId, @RequestParam("file") MultipartFile file) {
-        return service.upload(productId, file);
+    public PhotoResponse upload(@PathVariable Long productId, @RequestParam("file") MultipartFile file,
+                                @RequestParam(required = false) @Size(max = 40) String color) {
+        return service.upload(productId, file, color);
+    }
+
+    public record ColorRequest(@Size(max = 40) String color) {
+    }
+
+    @PutMapping("/api/store/photos/{photoId}/color")
+    public PhotoResponse color(@PathVariable Long photoId, @Valid @RequestBody ColorRequest req) {
+        return service.setColor(photoId, req.color());
     }
 
     @PutMapping("/api/store/products/{productId}/photos/order")

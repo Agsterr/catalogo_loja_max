@@ -14,9 +14,12 @@ public interface StoreRepository extends JpaRepository<Store, Long> {
 
     boolean existsBySlug(String slug);
 
-    /** Busca por nome ou endereço; {@code includeBlocked} só para o admin da plataforma. */
-    @Query("""
-            select s from Store s where (:includeBlocked = true or s.blocked = false)
-            and (:q = '' or lower(s.name) like lower(concat('%', :q, '%')) or s.slug like lower(concat('%', :q, '%')))""")
+    /** Busca por nome (sem acento) ou endereço; {@code q} já vem de {@code Search.like}. Bloqueadas só para o admin. */
+    @Query(value = """
+            select * from store s where (:includeBlocked = true or s.blocked = false)
+            and (:q = '%%' or unaccent(lower(s.name)) like :q or s.slug like :q)""",
+            countQuery = """
+            select count(*) from store s where (:includeBlocked = true or s.blocked = false)
+            and (:q = '%%' or unaccent(lower(s.name)) like :q or s.slug like :q)""", nativeQuery = true)
     Page<Store> search(@Param("q") String q, @Param("includeBlocked") boolean includeBlocked, Pageable page);
 }

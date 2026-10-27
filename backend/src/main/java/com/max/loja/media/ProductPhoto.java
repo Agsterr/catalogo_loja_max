@@ -38,6 +38,9 @@ public class ProductPhoto extends TenantEntity {
 
     private int position;
 
+    /** Cor da peça na foto (ex.: "Rosa"); nula = vale para todas. O app mostra primeiro as da cor escolhida. */
+    private String color;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 }

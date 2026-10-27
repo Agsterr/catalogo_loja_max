@@ -29,6 +29,9 @@ public class Product extends TenantEntity {
 
     private String description;
 
+    /** Tabela de medidas (texto livre: "P: busto 84 cm, cintura 66 cm..."). */
+    private String sizeChart;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Department department;

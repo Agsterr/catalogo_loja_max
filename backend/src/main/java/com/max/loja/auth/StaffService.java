@@ -12,6 +12,7 @@ import com.max.loja.security.AuditService;
 import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.NotFoundException;
 import com.max.loja.shared.PageResponse;
+import com.max.loja.shared.Search;
 import com.max.loja.shared.TenantContext;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -95,13 +96,13 @@ public class StaffService {
     @Transactional(readOnly = true)
     public PageResponse<CustomerResponse> customers(String q, Integer page, Integer size) {
         Long tenant = TenantContext.get();
-        String like = "%" + (q == null ? "" : q.trim().toLowerCase().replace("%", "")) + "%";
+        String like = Search.like(q == null ? "" : q);
         PageRequest req = PageResponse.request(page, size, Sort.unsorted());
         String from = """
                 from app_user u join (select customer_id, count(*) n from orders where tenant_id = ? group by customer_id) o
                   on o.customer_id = u.id
                 left join store_customer_block b on b.user_id = u.id and b.tenant_id = ?
-                where u.active and (lower(u.name) like ? or lower(u.email) like ? or coalesce(u.phone, '') like ?)""";
+                where u.active and (unaccent(lower(u.name)) like ? or lower(u.email) like ? or coalesce(u.phone, '') like ?)""";
         Long total = jdbc.queryForObject("select count(*) " + from, Long.class, tenant, tenant, like, like, like);
         List<CustomerResponse> items = jdbc.query("""
                 select u.id, u.name, u.email, u.phone, o.n, b.user_id is not null as blocked, b.reason, u.created_at

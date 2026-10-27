@@ -26,10 +26,11 @@ public class ProductPhotoService {
 
     private static final Logger log = LoggerFactory.getLogger(ProductPhotoService.class);
 
-    public record PhotoResponse(Long id, String url, String thumbUrl, int width, int height, int position) {
+    public record PhotoResponse(Long id, String url, String thumbUrl, int width, int height, int position, String color) {
 
         public static PhotoResponse from(ProductPhoto p) {
-            return new PhotoResponse(p.getId(), p.getUrl(), p.getThumbUrl(), p.getWidth(), p.getHeight(), p.getPosition());
+            return new PhotoResponse(p.getId(), p.getUrl(), p.getThumbUrl(), p.getWidth(), p.getHeight(), p.getPosition(),
+                    p.getColor());
         }
     }
 
@@ -54,7 +55,7 @@ public class ProductPhotoService {
     }
 
     @Transactional
-    public PhotoResponse upload(Long productId, MultipartFile file) {
+    public PhotoResponse upload(Long productId, MultipartFile file, String color) {
         Product product = products.findById(productId).orElseThrow(() -> new NotFoundException("Produto não encontrado"));
         if (file == null || file.isEmpty()) {
             throw new BusinessException("Escolha uma foto.");
@@ -92,6 +93,7 @@ public class ProductPhotoService {
         photo.setWidth(processed.width());
         photo.setHeight(processed.height());
         photo.setPosition((int) count);
+        photo.setColor(color == null || color.isBlank() ? null : color.trim().substring(0, Math.min(40, color.trim().length())));
         return PhotoResponse.from(photos.save(photo));
     }
 
@@ -104,6 +106,14 @@ public class ProductPhotoService {
             list.get(i).setPosition(i);
         }
         return list.stream().map(PhotoResponse::from).toList();
+    }
+
+    /** Liga a foto a uma cor (ou a todas, com nulo). */
+    @Transactional
+    public PhotoResponse setColor(Long photoId, String color) {
+        ProductPhoto photo = photos.findById(photoId).orElseThrow(() -> new NotFoundException("Foto não encontrada"));
+        photo.setColor(color == null || color.isBlank() ? null : color.trim());
+        return PhotoResponse.from(photo);
     }
 
     @Transactional

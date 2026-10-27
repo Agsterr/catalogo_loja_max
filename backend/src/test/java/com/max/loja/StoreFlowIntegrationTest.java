@@ -412,6 +412,99 @@ class StoreFlowIntegrationTest {
                 "email", "x-" + UUID.randomUUID() + "@x.test", "password", "SenhaDona123"), status().isUnprocessableEntity());
     }
 
+    @Test
+    void storefrontImprovements() throws Exception {
+        Shop shop = openStore("Moda Ação");
+        String owner = shop.owner();
+        // busca sem acento (produtos e lojas)
+        JsonNode product = call(owner, post("/api/store/products"), withChart(product("Calça Jeans Básica", "ROUPAS", null, 120,
+                List.of(variant(null, "40", "Azul", 5), variant(null, "42", "Preto", 2))), "40: cintura 70 cm"), status().isCreated());
+        long productId = product.get("id").asLong();
+        assertThat(product.get("sizeChart").asText()).isEqualTo("40: cintura 70 cm");
+        assertThat(call(null, get(shop.base() + "/products?q=calca"), null, status().isOk()).get("total").asLong()).isEqualTo(1);
+        assertThat(call(null, get("/api/public/stores?q=acao"), null, status().isOk()).get("items").findValuesAsText("slug"))
+                .contains(shop.slug());
+
+        // foto ligada a uma cor
+        JsonNode photo = json.readTree(mvc.perform(multipart("/api/store/products/" + productId + "/photos")
+                        .file(new MockMultipartFile("file", "azul.png", "image/png", png(800, 600))).param("color", "Azul")
+                        .header("Authorization", "Bearer " + owner))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        assertThat(photo.get("color").asText()).isEqualTo("Azul");
+        call(owner, put("/api/store/photos/" + photo.get("id").asLong() + "/color"), Map.of("color", "Preto"), status().isOk());
+
+        // loja: descrição, horário (7 dias), logo e capa
+        List<Map<String, String>> week = new java.util.ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            week.add(i == 6 ? Map.of("open", "", "close", "") : Map.of("open", "00:00", "close", "23:59"));
+        }
+        Map<String, Object> settings = new HashMap<>();
+        settings.put("name", "Moda Ação");
+        settings.put("description", "Roupas femininas");
+        settings.put("pickupEnabled", true);
+        settings.put("deliveryEnabled", true);
+        settings.put("deliveryFee", 10);
+        settings.put("openingHours", week);
+        JsonNode saved = call(owner, put("/api/store/settings"), settings, status().isOk());
+        assertThat(saved.get("hours")).hasSize(7);
+        assertThat(saved.get("hours").get(6).asText()).endsWith("fechado");
+        assertThat(saved.get("status").has("label")).isTrue();
+        settings.put("openingHours", List.of(Map.of("open", "09:00", "close", "18:00")));
+        call(owner, put("/api/store/settings"), settings, status().isBadRequest()); // precisa dos 7 dias
+        JsonNode withLogo = json.readTree(mvc.perform(multipart("/api/store/settings/logo")
+                        .file(new MockMultipartFile("file", "logo.png", "image/png", png(600, 600)))
+                        .header("Authorization", "Bearer " + owner))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(withLogo.get("logoUrl").asText()).contains("/lojas/");
+        JsonNode card = null;
+        for (JsonNode c : call(null, get("/api/public/stores?q=" + shop.slug()), null, status().isOk()).get("items")) {
+            card = c;
+        }
+        assertThat(card.get("logoUrl").asText()).contains("/lojas/");
+        call(owner, org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/store/settings/logo"), null,
+                status().isOk());
+
+        // conferência do carrinho: preço de agora, estoque e peça de outra loja
+        long v42 = product.get("variants").get(1).get("id").asLong();
+        Shop other = openStore("Outra");
+        JsonNode quote = call(null, post(shop.base() + "/cart/quote"),
+                Map.of("items", List.of(Map.of("variantId", v42, "quantity", 5))), status().isOk());
+        assertThat(quote.get("items").get(0).get("quantity").asInt()).isEqualTo(2); // só 2 em estoque
+        assertThat(quote.get("subtotal").decimalValue()).isEqualByComparingTo("240.00");
+        JsonNode foreign = call(null, post(other.base() + "/cart/quote"),
+                Map.of("items", List.of(Map.of("variantId", v42, "quantity", 1))), status().isOk());
+        assertThat(foreign.get("items").get(0).get("available").asBoolean()).isFalse();
+
+        // endereços salvos (do cliente; um não apaga o do outro)
+        String ana = register("Ana");
+        String bia = register("Bia");
+        long addr = id(call(ana, post("/api/me/addresses"), Map.of("label", "Casa", "address", "Rua das Flores, 123 - Centro"),
+                status().isCreated()));
+        assertThat(call(ana, get("/api/me/addresses"), null, status().isOk())).hasSize(1);
+        call(bia, org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/me/addresses/" + addr), null,
+                status().isNoContent());
+        assertThat(call(ana, get("/api/me/addresses"), null, status().isOk())).hasSize(1);
+        call(ana, post("/api/me/addresses"), Map.of("label", "X", "address", "curto"), status().isBadRequest());
+
+        // preferência de promoções lida do servidor
+        call(ana, post("/api/me/push-token"), Map.of("token", "cel-pref"), status().isNoContent());
+        call(ana, put("/api/me/push-preferences"), Map.of("token", "cel-pref", "promoNotifications", false), status().isNoContent());
+        assertThat(call(ana, get("/api/me/push-preferences?token=cel-pref"), null, status().isOk())
+                .get("promoNotifications").asBoolean()).isFalse();
+
+        // planilhas: só o dono; texto que parece fórmula vem protegido
+        String csv = mvc.perform(get("/api/store/reports/stock.csv").header("Authorization", "Bearer " + owner))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(csv).contains("Calça Jeans Básica").contains("Produto;Departamento");
+        call(ana, get("/api/store/reports/stock.csv"), null, status().isForbidden());
+        mvc.perform(get("/api/store/reports/orders.csv").header("Authorization", "Bearer " + owner)).andExpect(status().isOk());
+    }
+
+    private static Map<String, Object> withChart(Map<String, Object> product, String chart) {
+        product.put("sizeChart", chart);
+        return product;
+    }
+
     // --- ajudantes ---
 
     private Shop openStore(String name) throws Exception {

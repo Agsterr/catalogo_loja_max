@@ -97,6 +97,19 @@ public class PushController {
         }
     }
 
+    public record PreferencesResponse(boolean promoNotifications) {
+    }
+
+    /** O que a pessoa escolheu para este celular (o app mostra a chave certa; sem cadastro, padrão ligado). */
+    @org.springframework.web.bind.annotation.GetMapping("/api/me/push-preferences")
+    @Transactional(readOnly = true)
+    public PreferencesResponse readPreferences(@AuthenticationPrincipal Jwt jwt,
+                                               @org.springframework.web.bind.annotation.RequestParam String token) {
+        Long me = Long.valueOf(jwt.getSubject());
+        return new PreferencesResponse(devices.findByToken(token).filter(d -> me.equals(d.getUserId()))
+                .map(PushDevice::isPromoNotifications).orElse(true));
+    }
+
     /** Liga/desliga os avisos de promoções deste celular. */
     @PutMapping("/api/me/push-preferences")
     @ResponseStatus(HttpStatus.NO_CONTENT)
