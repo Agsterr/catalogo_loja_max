@@ -21,6 +21,9 @@ class _StorePickerScreenState extends State<StorePickerScreen> {
   Timer? _debounce;
   var _key = GlobalKey<PagedListState<StoreCard>>();
   GeoPoint? _near;
+
+  /// Raio da busca em km (nulo = sem limite, só ordena pela distância).
+  double? _radius = 20;
   String? _city;
   bool _locating = false;
   List<CityCount> _cities = const [];
@@ -149,6 +152,29 @@ class _StorePickerScreenState extends State<StorePickerScreen> {
               ],
             ),
           ),
+          if (_near != null)
+            SizedBox(
+              height: 48,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                children: [
+                  const Padding(padding: EdgeInsets.only(right: 8, top: 8), child: Text('Até')),
+                  for (final km in const [5.0, 10.0, 20.0, 50.0, null])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(km == null ? 'Sem limite' : '${km.toInt()} km'),
+                        selected: _radius == km,
+                        onSelected: (_) => setState(() {
+                          _radius = km;
+                          _key = GlobalKey();
+                        }),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           if (recent.isNotEmpty && _q.isEmpty)
             SizedBox(
               height: 56,
@@ -176,7 +202,7 @@ class _StorePickerScreenState extends State<StorePickerScreen> {
                     'page': '$page',
                     'q': _q,
                     'city': ?_city,
-                    if (_near != null) ...{'lat': '${_near!.lat}', 'lng': '${_near!.lng}'},
+                    if (_near != null) ...{'lat': '${_near!.lat}', 'lng': '${_near!.lng}', if (_radius != null) 'radiusKm': '${_radius!.toInt()}'},
                   }).query}')
                       as Map<String, dynamic>,
                   StoreCard.fromJson),

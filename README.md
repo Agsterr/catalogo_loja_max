@@ -32,7 +32,7 @@ Geradas pelo próprio Flutter com dados de exemplo: `cd mobile/telas && flutter 
 ## Funcionalidades
 
 **Cliente**
-- **Lojas da sua região:** botão **"Perto de mim"** (ordena por distância, mostra "1,2 km") e filtro por **cidade**. A posição só
+- **Lojas da sua região:** botão **"Perto de mim"** com raio à escolha (5, 10, 20, 50 km ou sem limite; ordena por distância, mostra "1,2 km") e filtro por **cidade**. A posição só
   vai na consulta e não é guardada; a precisão é baixa de propósito. A loja informa cidade/UF e, se quiser, marca o ponto com
   "estou na loja".
 - Busca a loja (ou abre direto no app de uma loja só — `--dart-define=STORE_SLUG=...`).
