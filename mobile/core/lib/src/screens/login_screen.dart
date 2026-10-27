@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api_client.dart';
+import '../config.dart';
 import '../session.dart';
 import '../widgets.dart';
 
@@ -161,6 +163,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
                   : Text(register ? 'Criar conta' : 'Entrar'),
             ),
+            if (register)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('Ao criar a conta você aceita os termos de uso e a política de privacidade.',
+                    textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
+              ),
             const SizedBox(height: 8),
             if (!widget.forStore)
               TextButton(
@@ -186,6 +194,17 @@ class _LoginScreenState extends State<LoginScreen> {
               label: const Text('Abrir minha loja'),
             ),
             ],
+            const SizedBox(height: 16),
+            Wrap(alignment: WrapAlignment.center, children: [
+              TextButton(
+                onPressed: () => launchUrl(AppConfig.termsUrl, mode: LaunchMode.externalApplication),
+                child: const Text('Termos de uso'),
+              ),
+              TextButton(
+                onPressed: () => launchUrl(AppConfig.privacyUrl, mode: LaunchMode.externalApplication),
+                child: const Text('Privacidade'),
+              ),
+            ]),
           ]),
         ),
       ),
@@ -296,6 +315,9 @@ class _RegisterStoreScreenState extends State<RegisterStoreScreen> {
                 ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Text('Criar minha loja'),
           ),
+          const SizedBox(height: 8),
+          Text('Ao criar a loja você aceita os termos de uso e a política de privacidade.',
+              textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
         ]),
       ),
     );

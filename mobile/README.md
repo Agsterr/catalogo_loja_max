@@ -28,6 +28,7 @@ for d in core cliente lojista telas; do (cd $d && flutter analyze && ([ -d test 
 | `--dart-define` | Uso |
 |---|---|
 | `API_URL` | URL da API (em produção **HTTPS**; o release do Android recusa HTTP) |
+| `SITE_URL` | páginas de privacidade, termos e exclusão de conta (padrão: o mesmo endereço da API) |
 | `SUPPORT_EMAIL` | contato mostrado na tela de conta bloqueada |
 | `FIREBASE_API_KEY`, `FIREBASE_APP_ID`, `FIREBASE_SENDER_ID`, `FIREBASE_PROJECT_ID` | push (veja `../docs/PUSH.md`); o `FIREBASE_APP_ID` é diferente em cada app |
 | `STORE_SLUG` | só no app do cliente: versão de **uma loja só** (com a marca do lojista), abre direto nela |
@@ -36,6 +37,11 @@ for d in core cliente lojista telas; do (cd $d && flutter analyze && ([ -d test 
 - `core/lib/src/push.dart`: Firebase Messaging (mostra o push com o app aberto, confirma o recebimento, abre o pedido/produto ao tocar).
 - `core/lib/src/background.dart`: Workmanager confere o sino a cada 15 min (1 h com push) e mostra o que for novo.
 - `core/lib/src/notifications.dart`: canais `pedidos` e `promocoes` e notificações locais.
+
+## Ícones e tela de abertura
+Gerados por `brand/render_icons.py` (sacola rosé para o cliente, loja vinho para o lojista) em `cliente/assets` e
+`lojista/assets`. Para aplicar de novo: em cada app, `dart run flutter_launcher_icons` e
+`dart run flutter_native_splash:create`.
 
 ## Imagens das telas
 `cd telas && flutter test telas_test.dart` gera `../../docs/telas/cliente/*.png` e `../../docs/telas/lojista/*.png`

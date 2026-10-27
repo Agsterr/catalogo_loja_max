@@ -53,6 +53,8 @@ public class AccountDeletionService {
         user.setEmail("excluido-" + userId + "@loja.invalid");
         user.setPhone(null);
         user.setPasswordHash("!");
+        user.setTotpEnabled(false);
+        user.setTotpSecret(null);
         user.revokeTokens();
         statuses.evict(userId);
         audit.recordFor(user.getStoreId(), AuditService.ACCOUNT_DELETED, userId, null);

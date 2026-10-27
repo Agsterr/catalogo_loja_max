@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config.dart';
 import '../format.dart';
 import '../models.dart';
 import '../push.dart';
@@ -232,6 +233,17 @@ class _AccountScreenState extends State<AccountScreen> {
               onTap: _delete,
             ),
         ],
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.privacy_tip_outlined),
+          title: const Text('Política de privacidade'),
+          onTap: () => launchUrl(AppConfig.privacyUrl, mode: LaunchMode.externalApplication),
+        ),
+        ListTile(
+          leading: const Icon(Icons.description_outlined),
+          title: const Text('Termos de uso'),
+          onTap: () => launchUrl(AppConfig.termsUrl, mode: LaunchMode.externalApplication),
+        ),
         const SizedBox(height: 24),
       ]),
     );

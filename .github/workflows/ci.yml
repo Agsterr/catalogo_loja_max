@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           build() {
             (cd "$1" && flutter build apk --release \
-              --dart-define=API_URL="${API_URL:-https://api.lojamax.com.br}" \
+              --dart-define=API_URL="${API_URL:-https://lojamax.focodev.com.br}" \
               --dart-define=FIREBASE_API_KEY="$FIREBASE_API_KEY" \
               --dart-define=FIREBASE_APP_ID="$2" \
               --dart-define=FIREBASE_SENDER_ID="$FIREBASE_SENDER_ID" \

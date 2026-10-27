@@ -1,0 +1,128 @@
+# Produção (Hetzner), igual ao Gerenciamento Max: a imagem da API é buildada no GitHub Actions e publicada no
+# GHCR; o servidor só faz pull. Segredos ficam no .env do servidor (modelo: .env.production.example).
+name: loja-max
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: loja-max-db
+    restart: unless-stopped
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=30"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-loja}
+      POSTGRES_USER: ${POSTGRES_USER:-loja}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-loja}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+
+  # Backup diário do banco (ao subir e a cada 24 h), últimos BACKUP_KEEP_DAYS dias no volume db_backups.
+  # Cópia fora do servidor: BACKUP_BUCKET = bucket PRIVADO do R2 (nunca o de fotos, que é público).
+  backup:
+    image: postgres:16-alpine
+    container_name: loja-max-backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-loja}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-loja}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_BUCKET: ${BACKUP_BUCKET:-}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: auto
+    volumes:
+      - db_backups:/backups
+    command:
+      - sh
+      - -c
+      - |
+        set -u
+        mkdir -p /backups
+        if [ -n "$$BACKUP_BUCKET" ]; then
+          apk add --no-cache aws-cli >/dev/null 2>&1 || echo "aws-cli indisponível: backup só neste servidor"
+        fi
+        dump() {
+          f="/backups/loja-$$(date -u +%Y-%m-%d-%H%M).sql.gz"
+          if pg_dump --no-owner --clean --if-exists | gzip > "$$f.tmp" && [ -s "$$f.tmp" ]; then
+            mv "$$f.tmp" "$$f"
+            echo "backup ok: $$f ($$(du -h "$$f" | cut -f1))"
+            find /backups -name 'loja-*.sql.gz' -mtime +"$$BACKUP_KEEP_DAYS" -delete
+            if [ -n "$$BACKUP_BUCKET" ] && command -v aws >/dev/null 2>&1; then
+              aws s3 cp "$$f" "s3://$$BACKUP_BUCKET/db/$$(basename "$$f")" --endpoint-url "$$R2_ENDPOINT" >/dev/null \
+                && echo "copia enviada para o bucket $$BACKUP_BUCKET" || echo "ERRO ao enviar a copia para o bucket"
+            fi
+          else
+            rm -f "$$f.tmp"
+            echo "ERRO no pg_dump"
+          fi
+        }
+        dump
+        while true; do
+          sleep 86400
+          dump
+        done
+    mem_limit: 64m
+
+  api:
+    image: ${API_IMAGE:-ghcr.io/agsterr/loja-max-api:latest}
+    container_name: loja-max-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-loja}
+      DB_USER: ${POSTGRES_USER:-loja}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://lojamax.focodev.com.br}
+      APP_TIMEZONE: America/Sao_Paulo
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-https://lojamax.focodev.com.br}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
+      # Fotos dos produtos: Cloudflare R2; sem as variáveis, ficam no volume media
+      APP_MEDIA_PATH: /app/media
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: "${MAIL_FROM:-Loja Max <nao-responda@lojamax.focodev.com.br>}"
+      FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64:-}
+      JAVA_TOOL_OPTIONS: -Xms96m -Xmx256m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m -Xss512k
+    volumes:
+      - media:/app/media
+    mem_limit: 448m
+
+  # nginx: /api e /actuator/health para a API; o resto são as páginas públicas (início, privacidade, termos,
+  # excluir conta), geradas pelo deploy.sh em ./site-public com o nome e o e-mail do .env.
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: loja-max-nginx
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8090}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./site-public:/usr/share/nginx/html:ro
+    mem_limit: 64m
+
+volumes:
+  pgdata:
+  db_backups:
+  media:

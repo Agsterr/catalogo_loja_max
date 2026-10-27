@@ -16,6 +16,7 @@ mobile/**/ios/Runner/GoogleService-Info.plist
 .env
 .env.*
 !.env.example
+!.env.production.example
 .idea/
 .vscode/
 *.iml

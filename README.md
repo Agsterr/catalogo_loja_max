@@ -126,6 +126,11 @@ backend/src/main/java/com/max/loja
 Listas que crescem são paginadas (`page`, `size` até 100; resposta com `items`, `total` e `hasMore`): vitrine, busca de
 lojas, produtos, pedidos, clientes, sino, histórico de estoque, auditoria e as listas da plataforma.
 
+## Publicação
+Push na `main` testa, builda a imagem da API e atualiza o servidor (Hetzner), igual ao Gerenciamento Max. O mesmo
+servidor serve as páginas exigidas pelas lojas de apps: `/privacidade`, `/termos` e `/excluir-conta`.
+Passo a passo em [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Segurança
 Resumo em [docs/SEGURANCA.md](docs/SEGURANCA.md).
 
