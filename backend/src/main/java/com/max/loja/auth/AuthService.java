@@ -76,11 +76,11 @@ public class AuthService {
 
     /** Entregador cria a conta pelo app: fica pendente até a plataforma aprovar. */
     @Transactional
-    public TokenResponse registerCourier(CourierDtos.RegisterRequest req) {
+    public TokenResponse registerCourier(CourierDtos.RegisterRequest req, String deviceId) {
         ensureEmailFree(req.email());
         AppUser user = newUser(req.name(), req.email(), req.password(), Role.COURIER, null);
         user.setPhone(blankToNull(req.phone()));
-        couriers.createProfile(user, req);
+        couriers.createProfile(user, req, deviceId);
         return token(user);
     }
 

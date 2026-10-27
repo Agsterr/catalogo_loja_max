@@ -109,7 +109,8 @@ public class DispatchService {
         job.setItemCount(o.itemCount());
         job.setDistanceKm(o.getDeliveryDistanceKm());
         job.setCustomerFee(o.getDeliveryFee());
-        job.setCourierFee(pricing.courierPay(o.getDeliveryFee()));
+        job.setCourierFee(pricing.courierPay(o.getCourierFreight() == null ? o.getDeliveryFee() : o.getCourierFreight()));
+        job.setFreightPayer(o.getDeliveryFee().signum() > 0 ? "CUSTOMER" : "STORE");
         job.setPickupCode(code());
         job.setDeliveryCode(code());
         job.setCreatedAt(LocalDateTime.now(clock));

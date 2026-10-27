@@ -33,6 +33,20 @@ public class SecretBox {
         }
     }
 
+    /**
+     * Impressão digital para procurar/comparar sem guardar o valor (CPF, aparelho): HMAC-SHA256 com a chave do servidor,
+     * então quem tiver só o banco não reverte nem testa CPFs.
+     */
+    public String blindIndex(String plain) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(key.getEncoded(), "HmacSHA256"));
+            return java.util.HexFormat.of().formatHex(mac.doFinal(plain.getBytes(StandardCharsets.UTF_8)));
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     public String encrypt(String plain) {
         try {
             byte[] iv = new byte[12];

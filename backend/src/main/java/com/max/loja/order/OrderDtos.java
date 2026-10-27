@@ -51,10 +51,12 @@ public final class OrderDtos {
 
     /**
      * Entrega por entregador: situação da corrida. {@code pickupCode} só a equipe vê (o entregador digita ao coletar);
-     * {@code deliveryCode} só o cliente vê (o entregador digita ao entregar).
+     * {@code deliveryCode} só o cliente vê (o entregador digita ao entregar). O frete ({@code freight}) é pago direto ao
+     * entregador por {@code freightPayer} (CUSTOMER na entrega, STORE na coleta); a plataforma não passa dinheiro.
      */
     public record CourierInfo(String status, String statusLabel, String courierName, String courierPhone, String vehicle,
-                              String pickupCode, String deliveryCode, LocalDateTime expiresAt, boolean canRetry) {
+                              String pickupCode, String deliveryCode, LocalDateTime expiresAt, boolean canRetry,
+                              BigDecimal freight, String freightPayer) {
     }
 
     public record OrderSummary(Long id, String code, OrderStatus status, String statusLabel, DeliveryMethod deliveryMethod,

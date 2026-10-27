@@ -51,6 +51,13 @@ public class Courier {
     private Double lastLng;
     private LocalDateTime lastSeenAt;
 
+    /** CPF único: cifrado (para mostrar mascarado) e impressão digital (para impedir segundo cadastro). */
+    private String cpfEnc;
+    private String cpfHash;
+
+    /** Entregas grátis já usadas por este CPF (o aparelho tem o contador dele). */
+    private int freeUsed;
+
     private int deliveredCount;
     private int canceledCount;
 

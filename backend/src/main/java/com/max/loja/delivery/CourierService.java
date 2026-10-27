@@ -21,6 +21,8 @@ import com.max.loja.order.CustomerOrder;
 import com.max.loja.order.OrderService;
 import com.max.loja.order.OrderStatus;
 import com.max.loja.push.PushNotifier;
+import com.max.loja.security.SecretBox;
+import com.max.loja.shared.Cpf;
 import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.NotFoundException;
 import com.max.loja.shared.PageResponse;
@@ -52,11 +54,18 @@ public class CourierService {
     private final RateLimiter rateLimiter;
     private final ApplicationEventPublisher events;
     private final TenantRunner runner;
+    private final CourierBilling billing;
+    private final CourierPaymentRepository payments;
+    private final SecretBox box;
     private final Clock clock;
 
     public CourierService(CourierRepository couriers, DeliveryJobRepository jobs, AppUserRepository users,
                           OrderService orders, DispatchService dispatch, DeliveryProperties props, PushNotifier push,
-                          RateLimiter rateLimiter, ApplicationEventPublisher events, TenantRunner runner, Clock clock) {
+                          RateLimiter rateLimiter, ApplicationEventPublisher events, TenantRunner runner, CourierBilling billing, CourierPaymentRepository payments,
+                          SecretBox box, Clock clock) {
+        this.billing = billing;
+        this.payments = payments;
+        this.box = box;
         this.couriers = couriers;
         this.jobs = jobs;
         this.users = users;
@@ -74,8 +83,19 @@ public class CourierService {
 
     /** Cria o perfil (chamado no cadastro, na mesma transação da conta). Fica pendente até a plataforma aprovar. */
     @Transactional
-    public Courier createProfile(AppUser user, RegisterRequest req) {
+    public Courier createProfile(AppUser user, RegisterRequest req, String deviceId) {
+        String deviceHash = billing.deviceHash(deviceId);
+        String cpf = Cpf.normalize(req.cpf());
+        if (cpf == null) {
+            throw new BusinessException("CPF inválido. Confira os 11 números.");
+        }
+        String cpfHash = box.blindIndex("cpf:" + cpf);
+        if (couriers.existsByCpfHash(cpfHash)) {
+            throw new BusinessException("Já existe um cadastro de entregador com este CPF.");
+        }
         Courier c = new Courier();
+        c.setCpfHash(cpfHash);
+        c.setCpfEnc(box.encrypt(cpf));
         c.setUserId(user.getId());
         c.setPhone(req.phone().trim());
         c.setVehicle(req.vehicle());
@@ -86,7 +106,9 @@ public class CourierService {
         c.setBaseLng(req.baseLng());
         c.setRadiusKm(req.radiusKm() == null ? 10 : req.radiusKm());
         c.setCreatedAt(LocalDateTime.now(clock));
-        return couriers.save(c);
+        couriers.saveAndFlush(c); // a linha precisa existir antes do vínculo com o aparelho (chave estrangeira)
+        billing.linkDevice(user.getId(), deviceHash);
+        return c;
     }
 
     @Transactional(readOnly = true)
@@ -111,8 +133,9 @@ public class CourierService {
 
     /** Liga/desliga o recebimento de corridas; a posição enviada junto vale como a de agora. */
     @Transactional
-    public ProfileResponse setOnline(Long id, OnlineRequest req) {
+    public ProfileResponse setOnline(Long id, OnlineRequest req, String deviceId) {
         Courier c = approved(id);
+        billing.linkDevice(id, billing.deviceHash(deviceId));
         if (req.online() && req.lat() == null && c.getBaseLat() == null) {
             throw new BusinessException("Ligue a localização ou cadastre o ponto da sua região para receber corridas.");
         }
@@ -139,7 +162,7 @@ public class CourierService {
                 ref[1] + dLng, LocalDateTime.now(clock), PageResponse.request(page, size, Sort.unsorted()));
         return PageResponse.of(result, j -> new JobCard(j.getId(), j.getStoreName(), j.getPickupAddress(), j.getCity(),
                 Math.round(km(ref[0], ref[1], j.getPickupLat(), j.getPickupLng()) * 10) / 10.0, j.getDistanceKm(),
-                j.getCourierFee(), j.getItemCount(), j.getCreatedAt(), j.getExpiresAt()));
+                j.getCourierFee(), j.getFreightPayer(), j.getItemCount(), j.getCreatedAt(), j.getExpiresAt()));
     }
 
     @Transactional(readOnly = true)
@@ -162,11 +185,15 @@ public class CourierService {
     }
 
     /** Aceita a corrida: atômico (só um entregador consegue) e respeita o limite de corridas ao mesmo tempo. */
-    public JobDetail accept(Long courierId, Long jobId) {
+    public JobDetail accept(Long courierId, Long jobId, String deviceId) {
+        String deviceHash = billing.deviceHash(deviceId);
         DeliveryJob peek = jobs.findById(jobId).orElseThrow(() -> new NotFoundException("Corrida não encontrada"));
+        billing.linkDevice(courierId, deviceHash);
         return runner.call(peek.getTenantId(), () -> {
             Courier c = couriers.lock(courierId).orElseThrow(() -> new NotFoundException("Entregador não encontrado"));
             requireApproved(c);
+            billing.lockDevice(deviceHash);
+            billing.requireCanAccept(c, deviceHash, jobs.countActive(courierId));
             if (jobs.countActive(courierId) >= props.maxActiveJobs()) {
                 throw new BusinessException("Você já está com " + props.maxActiveJobs() + " corridas. Conclua uma antes de aceitar outra.");
             }
@@ -198,7 +225,8 @@ public class CourierService {
     }
 
     /** Entrega: o entregador digita o código que o cliente vê no pedido. O pedido vira "entregue". */
-    public JobDetail deliver(Long courierId, Long jobId, String code) {
+    public JobDetail deliver(Long courierId, Long jobId, String code, String deviceId) {
+        String deviceHash = billing.deviceHash(deviceId);
         DeliveryJob peek = mine(courierId, jobId);
         attempt("job-deliver", peek);
         return runner.call(peek.getTenantId(), () -> {
@@ -210,7 +238,10 @@ public class CourierService {
             checkCode(job, code, job.getDeliveryCode(), "Código de entrega incorreto. Peça ao cliente o código do pedido.");
             job.setStatus(JobStatus.DELIVERED);
             job.setDeliveredAt(LocalDateTime.now(clock));
-            couriers.lock(courierId).ifPresent(c -> c.setDeliveredCount(c.getDeliveredCount() + 1));
+            couriers.lock(courierId).ifPresent(c -> {
+                c.setDeliveredCount(c.getDeliveredCount() + 1);
+                billing.recordDelivery(c, deviceHash);
+            });
             orders.courierStep(order, OrderStatus.DELIVERED, courierId, name(courierId));
             events.publishEvent(new StoreEvents.DeliveryDone(jobId));
             return detail(job);
@@ -247,7 +278,44 @@ public class CourierService {
         return new Money2(e.getTotal(), e.getCount());
     }
 
+    // --- assinatura ---
+
+    @Transactional
+    public CourierDtos.SubscriptionResponse subscription(Long id, String deviceId) {
+        Courier c = courier(id);
+        String hash = deviceId == null || deviceId.isBlank() ? null : billing.deviceHash(deviceId);
+        if (hash != null) {
+            billing.linkDevice(id, hash);
+        }
+        CourierBilling.Standing s = billing.standing(c, hash, jobs.countActive(id));
+        return new CourierDtos.SubscriptionResponse(s.subscribed(), s.paidUntil(), s.freeLeft(), s.freeLimit(), s.price(),
+                s.canAccept(), null);
+    }
+
+    public PaymentProvider.Instructions checkout(Long id) {
+        return billing.checkout(id);
+    }
+
     // --- administração da plataforma ---
+
+    /** Cobranças de assinatura (PENDING = esperando a confirmação do pagamento). */
+    @Transactional(readOnly = true)
+    public PageResponse<CourierDtos.AdminPayment> adminPayments(String status, Integer page, Integer size) {
+        Page<CourierPayment> result = payments.findByStatusOrderByIdDesc(status == null || status.isBlank() ? CourierPayment.PENDING : status,
+                PageResponse.request(page, size, Sort.unsorted()));
+        var names = new java.util.HashMap<Long, String>();
+        users.findAllById(result.getContent().stream().map(CourierPayment::getCourierId).toList()).forEach(u -> names.put(u.getId(), u.getName()));
+        return PageResponse.of(result, p -> new CourierDtos.AdminPayment(p.getId(), p.getCourierId(), names.get(p.getCourierId()),
+                p.getAmount(), p.getReference(), p.getStatus(), p.getMethod(), p.getCreatedAt(), p.getConfirmedAt()));
+    }
+
+    public void confirmPayment(Long paymentId, Long adminId) {
+        billing.confirm(paymentId, adminId);
+    }
+
+    public void grantDays(Long courierId, int days, Long adminId) {
+        billing.grant(courierId, days, adminId);
+    }
 
     @Transactional(readOnly = true)
     public PageResponse<AdminCourier> adminList(CourierStatus status, String q, Integer page, Integer size) {
@@ -346,7 +414,17 @@ public class CourierService {
         AppUser u = users.findById(c.getUserId()).orElseThrow();
         return new ProfileResponse(c.getUserId(), u.getName(), u.getEmail(), c.getPhone(), c.getVehicle(), c.getVehicle().label(),
                 c.getPlate(), c.getCity(), c.getState(), c.getBaseLat(), c.getBaseLng(), c.getRadiusKm(), c.getStatus(),
-                c.getStatusReason(), c.isOnline(), c.getDeliveredCount(), c.getCanceledCount(), c.getCreatedAt());
+                c.getStatusReason(), c.isOnline(), c.getDeliveredCount(), c.getCanceledCount(), c.getCreatedAt(),
+                maskedCpf(c));
+    }
+
+    /** CPF mascarado; se a chave de criptografia foi trocada e não dá mais para ler, o app só não mostra. */
+    private String maskedCpf(Courier c) {
+        try {
+            return c.getCpfEnc() == null ? null : Cpf.mask(box.decrypt(c.getCpfEnc()));
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** Detalhe da corrida: endereço e dados do cliente só enquanto ela é do entregador. */
@@ -355,7 +433,7 @@ public class CourierService {
         return new JobDetail(j.getId(), j.getOrderCode(), j.getStatus().name(), j.getStatus().label(), j.getStoreName(),
                 j.getPickupAddress(), j.getPickupLat(), j.getPickupLng(), reveal ? j.getDropoffAddress() : null,
                 reveal ? j.getDropoffLat() : null, reveal ? j.getDropoffLng() : null, reveal ? j.getCustomerName() : null,
-                j.getStatus().active() ? j.getCustomerPhone() : null, j.getDistanceKm(), j.getCourierFee(), j.getItemCount(),
+                j.getStatus().active() ? j.getCustomerPhone() : null, j.getDistanceKm(), j.getCourierFee(), j.getFreightPayer(), j.getItemCount(),
                 j.getAcceptedAt(), j.getPickedUpAt(), j.getDeliveredAt());
     }
 

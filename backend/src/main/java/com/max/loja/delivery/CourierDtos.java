@@ -26,6 +26,7 @@ public final class CourierDtos {
             @NotBlank @Size(max = 120) String name,
             @NotBlank @Email @Size(max = 180) String email,
             @NotBlank @Size(min = 8, max = 30) String phone,
+            @NotBlank @Size(max = 20) String cpf,
             @NotBlank @Pattern(regexp = PASSWORD, message = PASSWORD_MSG) String password,
             @NotNull Vehicle vehicle,
             @Size(max = 12) String plate,
@@ -60,12 +61,12 @@ public final class CourierDtos {
     public record ProfileResponse(Long id, String name, String email, String phone, Vehicle vehicle, String vehicleLabel,
                                   String plate, String city, String state, Double baseLat, Double baseLng, int radiusKm,
                                   CourierStatus status, String statusReason, boolean online, int deliveredCount,
-                                  int canceledCount, LocalDateTime createdAt) {
+                                  int canceledCount, LocalDateTime createdAt, String cpfMasked) {
     }
 
     /** Corrida no mural: sem o endereço nem o nome do cliente (só depois do aceite). */
     public record JobCard(Long id, String storeName, String pickupAddress, String city, Double distanceToStoreKm,
-                          BigDecimal tripKm, BigDecimal fee, int itemCount, LocalDateTime createdAt,
+                          BigDecimal tripKm, BigDecimal fee, String freightPayer, int itemCount, LocalDateTime createdAt,
                           LocalDateTime expiresAt) {
     }
 
@@ -73,7 +74,7 @@ public final class CourierDtos {
     public record JobDetail(Long id, String orderCode, String status, String statusLabel, String storeName,
                             String pickupAddress, double pickupLat, double pickupLng, String dropoffAddress,
                             Double dropoffLat, Double dropoffLng, String customerName, String customerPhone,
-                            BigDecimal tripKm, BigDecimal fee, int itemCount, LocalDateTime acceptedAt,
+                            BigDecimal tripKm, BigDecimal fee, String freightPayer, int itemCount, LocalDateTime acceptedAt,
                             LocalDateTime pickedUpAt, LocalDateTime deliveredAt) {
     }
 
@@ -90,5 +91,18 @@ public final class CourierDtos {
     }
 
     public record ReasonRequest(@Size(max = 300) String reason) {
+    }
+
+    /** Assinatura e entregas grátis: o que o app mostra e se pode aceitar corrida agora. */
+    public record SubscriptionResponse(boolean subscribed, LocalDateTime paidUntil, int freeLeft, int freeLimit, BigDecimal price,
+                                       boolean canAccept, PaymentProvider.Instructions pending) {
+    }
+
+    /** Cobrança de assinatura na lista do admin. */
+    public record AdminPayment(Long id, Long courierId, String courierName, BigDecimal amount, String reference, String status,
+                               String method, LocalDateTime createdAt, LocalDateTime confirmedAt) {
+    }
+
+    public record GrantRequest(@Min(1) @Max(366) int days) {
     }
 }

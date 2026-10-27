@@ -53,7 +53,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
         "spring.datasource.username=${DB_USER:loja}", "spring.datasource.password=${DB_PASSWORD:loja}",
         "app.push.service-account-json={\"project_id\":\"teste\"}", "app.push.worker-ms=3600000",
         "app.push.promotions-cron=-",
-        "app.platform-admin.email=admin@plataforma.test", "app.platform-admin.password=SenhaDoAdmin123"})
+        "app.platform-admin.email=admin@plataforma.test", "app.platform-admin.password=SenhaDoAdmin123",
+        "app.billing.free-deliveries=1", "app.billing.pix-key=pix@plataforma.test", "app.billing.pix-holder=Loja Max"})
 @AutoConfigureMockMvc
 class StoreFlowIntegrationTest {
 
@@ -589,8 +590,15 @@ class StoreFlowIntegrationTest {
         long variant = product.get("variants").get(0).get("id").asLong();
 
         // entregadores: cadastro pendente → sem acesso até a plataforma aprovar
-        String ze = registerCourier("Zé Moto", -23.56, -46.64);
-        String bia = registerCourier("Bia Bike", -23.57, -46.65);
+        String deviceA = "aparelho-A-" + UUID.randomUUID();
+        String deviceB = "aparelho-B-" + UUID.randomUUID();
+        String cpfZe = newCpf();
+        String ze = registerCourier("Zé Moto", -23.56, -46.64, deviceA, cpfZe, status().isCreated()).get("token").asText();
+        String bia = registerCourier("Bia Bike", -23.57, -46.65, deviceB);
+        // antifraude: mesmo CPF, CPF inválido e cadastro sem o ID do aparelho são recusados
+        registerCourier("Zé de novo", -23.56, -46.64, deviceB, cpfZe, status().isUnprocessableEntity());
+        registerCourier("CPF ruim", -23.56, -46.64, deviceB, "11111111111", status().isUnprocessableEntity());
+        registerCourier("Sem aparelho", -23.56, -46.64, null, newCpf(), status().isUnprocessableEntity());
         call(ze, get("/api/courier/jobs/open"), null, status().isForbidden());
         String admin = login("admin@plataforma.test", "SenhaDoAdmin123");
         call(ze, get("/api/courier/jobs/open"), null, status().isForbidden());
@@ -598,8 +606,8 @@ class StoreFlowIntegrationTest {
                 status().isNoContent());
         call(admin, post("/api/platform/couriers/" + id(call(bia, get("/api/courier/me"), null, status().isOk())) + "/approve"), null,
                 status().isNoContent());
-        call(ze, post("/api/courier/online"), Map.of("online", true, "lat", -23.56, "lng", -46.64), status().isOk());
-        call(bia, post("/api/courier/online"), Map.of("online", true, "lat", -23.57, "lng", -46.65), status().isOk());
+        call(ze, withDevice(post("/api/courier/online"), deviceA), Map.of("online", true, "lat", -23.56, "lng", -46.64), status().isOk());
+        call(bia, withDevice(post("/api/courier/online"), deviceB), Map.of("online", true, "lat", -23.57, "lng", -46.65), status().isOk());
         call(ze, get("/api/courier/jobs/open"), null, status().isOk());
         call(shop.owner(), get("/api/courier/me"), null, status().isForbidden()); // lojista não é entregador
 
@@ -616,6 +624,8 @@ class StoreFlowIntegrationTest {
         JsonNode order = call(carla, post(shop.orders()), req, status().isCreated());
         long orderId = id(order);
         assertThat(order.get("deliveryFee").decimalValue()).isEqualByComparingTo("6.00"); // ~1,3 km: vale o mínimo da corrida
+        assertThat(order.get("total").decimalValue()).isEqualByComparingTo("80.00"); // o frete vai direto ao entregador, fora do total
+        assertThat(order.get("courier").get("freightPayer").asText()).isEqualTo("CUSTOMER");
         assertThat(order.get("courier").get("status").asText()).isEqualTo("WAITING");
 
         // a loja confirma, mas sem pagamento não abre corrida; a coleta/entrega são do entregador
@@ -631,9 +641,9 @@ class StoreFlowIntegrationTest {
         long jobId = id(card);
 
         // só um aceita
-        JsonNode accepted = call(ze, post("/api/courier/jobs/" + jobId + "/accept"), null, status().isOk());
+        JsonNode accepted = call(ze, withDevice(post("/api/courier/jobs/" + jobId + "/accept"), deviceA), null, status().isOk());
         assertThat(accepted.get("dropoffAddress").asText()).contains("Rua das Flores");
-        call(bia, post("/api/courier/jobs/" + jobId + "/accept"), null, status().isConflict());
+        call(bia, withDevice(post("/api/courier/jobs/" + jobId + "/accept"), deviceB), null, status().isConflict());
         assertThat(call(bia, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isZero();
         call(bia, post("/api/courier/jobs/" + jobId + "/pickup"), Map.of("code", "0000"), status().isNotFound()); // não é dela
 
@@ -645,32 +655,63 @@ class StoreFlowIntegrationTest {
         assertThat(forStore.get("courier").get("courierName").asText()).isEqualTo("Zé Moto");
         assertThat(forStore.get("courier").get("deliveryCode").isNull()).isTrue();
         assertThat(forCustomer.get("courier").get("pickupCode").isNull()).isTrue();
-        call(ze, post("/api/courier/jobs/" + jobId + "/deliver"), Map.of("code", deliveryCode), status().isUnprocessableEntity()); // antes de coletar
+        call(ze, withDevice(post("/api/courier/jobs/" + jobId + "/deliver"), deviceA), Map.of("code", deliveryCode), status().isUnprocessableEntity()); // antes de coletar
         call(ze, post("/api/courier/jobs/" + jobId + "/pickup"), Map.of("code", wrong(pickupCode)), status().isUnprocessableEntity());
         call(ze, post("/api/courier/jobs/" + jobId + "/pickup"), Map.of("code", pickupCode), status().isOk());
         assertThat(call(owner, get("/api/store/orders/" + orderId), null, status().isOk()).get("status").asText()).isEqualTo("SHIPPED");
-        call(ze, post("/api/courier/jobs/" + jobId + "/deliver"), Map.of("code", deliveryCode), status().isOk());
+        call(ze, withDevice(post("/api/courier/jobs/" + jobId + "/deliver"), deviceA), Map.of("code", deliveryCode), status().isOk());
         assertThat(call(carla, get(shop.orders() + "/" + orderId), null, status().isOk()).get("status").asText()).isEqualTo("DELIVERED");
         JsonNode earnings = call(ze, get("/api/courier/earnings"), null, status().isOk());
         assertThat(earnings.get("today").get("count").asLong()).isEqualTo(1);
         assertThat(earnings.get("today").get("total").decimalValue()).isEqualByComparingTo("6.00");
 
-        // segundo pedido: o entregador desiste, ninguém aceita, a loja chama de novo; cancelar derruba a corrida
+        // entregas grátis acabaram (1 por aparelho/CPF neste teste): o Zé precisa assinar; quem troca de conta no mesmo aparelho também
+        call(ze, get("/api/courier/subscription"), null, status().isOk());
+        assertThat(call(ze, withDevice(get("/api/courier/subscription"), deviceA), null, status().isOk()).get("freeLeft").asInt()).isZero();
         req.put("deliveryLat", -23.56);
         long second = id(call(carla, post(shop.orders()), req, status().isCreated()));
         call(owner, post("/api/store/orders/" + second + "/paid"), Map.of("paid", true), status().isOk());
         call(owner, post("/api/store/orders/" + second + "/status"), Map.of("status", "CONFIRMED"), status().isOk());
         long job2 = id(call(ze, get("/api/courier/jobs/open"), null, status().isOk()).get("items").get(0));
-        call(ze, post("/api/courier/jobs/" + job2 + "/accept"), null, status().isOk());
-        call(ze, post("/api/courier/jobs/" + job2 + "/cancel"), null, status().isNoContent());
-        assertThat(call(bia, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isEqualTo(1);
+        JsonNode needSub = call(ze, withDevice(post("/api/courier/jobs/" + job2 + "/accept"), deviceA), null, status().isPaymentRequired());
+        assertThat(needSub.get("code").asText()).isEqualTo("SUBSCRIPTION_REQUIRED");
+        String caio = registerCourier("Caio Novo", -23.56, -46.64, deviceA); // e-mail e CPF novos, mesmo aparelho
+        call(admin, post("/api/platform/couriers/" + id(call(caio, get("/api/courier/me"), null, status().isOk())) + "/approve"), null,
+                status().isNoContent());
+        call(caio, withDevice(post("/api/courier/jobs/" + job2 + "/accept"), deviceA), null, status().isPaymentRequired());
+
+        // aparelho novo tem as dele: a Bia aceita e desiste, ninguém aceita, a loja chama de novo; cancelar derruba a corrida
+        call(bia, withDevice(post("/api/courier/jobs/" + job2 + "/accept"), deviceB), null, status().isOk());
+        call(bia, post("/api/courier/jobs/" + job2 + "/cancel"), null, status().isNoContent());
+        assertThat(call(ze, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isEqualTo(1);
         jdbc.update("update delivery_job set expires_at = ? where id = ?", LocalDateTime.now(clock).minusMinutes(1), job2);
         dispatch.expireOld();
         assertThat(call(owner, get("/api/store/orders/" + second), null, status().isOk()).get("courier").get("canRetry").asBoolean()).isTrue();
         call(owner, post("/api/store/orders/" + second + "/courier/retry"), null, status().isNoContent());
-        assertThat(call(bia, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isEqualTo(1);
+        assertThat(call(ze, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isEqualTo(1);
+
+        // assinatura: o Zé gera a cobrança (a plataforma só mostra como pagar), o admin confirma e ele volta a aceitar
+        JsonNode pay = call(ze, post("/api/courier/subscription/checkout"), null, status().isOk());
+        assertThat(pay.get("pixKey").asText()).isEqualTo("pix@plataforma.test");
+        assertThat(pay.get("amount").decimalValue()).isEqualByComparingTo("24.99");
+        assertThat(call(ze, post("/api/courier/subscription/checkout"), null, status().isOk()).get("reference").asText())
+                .isEqualTo(pay.get("reference").asText()); // reaproveita a cobrança em aberto
+        JsonNode pending = call(admin, get("/api/platform/courier-payments"), null, status().isOk());
+        JsonNode mine = null;
+        for (JsonNode p : pending.get("items")) {
+            if (p.get("reference").asText().equals(pay.get("reference").asText())) {
+                mine = p;
+            }
+        }
+        assertThat(mine).isNotNull();
+        call(ze, withDevice(post("/api/courier/jobs/" + job2 + "/accept"), deviceA), null, status().isPaymentRequired());
+        call(admin, post("/api/platform/courier-payments/" + id(mine) + "/confirm"), null, status().isNoContent());
+        call(admin, post("/api/platform/courier-payments/" + id(mine) + "/confirm"), null, status().isNoContent()); // idempotente
+        JsonNode sub = call(ze, withDevice(get("/api/courier/subscription"), deviceA), null, status().isOk());
+        assertThat(sub.get("subscribed").asBoolean()).isTrue();
+        call(ze, withDevice(post("/api/courier/jobs/" + job2 + "/accept"), deviceA), null, status().isOk());
         call(owner, post("/api/store/orders/" + second + "/status"), Map.of("status", "CANCELED"), status().isOk());
-        assertThat(call(bia, get("/api/courier/jobs/open"), null, status().isOk()).get("total").asLong()).isZero();
+        assertThat(call(ze, get("/api/courier/jobs/active"), null, status().isOk())).isEmpty(); // pedido cancelado derruba a corrida
 
         // excluir a conta do entregador apaga os dados pessoais dele (e tira ele do mural)
         call(bia, post("/api/me/delete"), Map.of("password", "Senha1234"), status().isNoContent());
@@ -682,11 +723,42 @@ class StoreFlowIntegrationTest {
         call(other.owner(), post("/api/store/orders/" + second + "/courier/retry"), null, status().isNotFound());
     }
 
-    private String registerCourier(String name, double lat, double lng) throws Exception {
+    private int cpfSeq = 100000000;
+
+    /** CPF válido e novo a cada chamada (o banco de teste é compartilhado e o CPF é único). */
+    private String newCpf() {
+        String base = String.valueOf(cpfSeq++ + (int) (System.nanoTime() % 800000));
+        int[] d = new int[11];
+        for (int i = 0; i < 9; i++) {
+            d[i] = base.charAt(i) - '0';
+        }
+        for (int len = 9; len <= 10; len++) {
+            int sum = 0;
+            for (int i = 0; i < len; i++) {
+                sum += d[i] * (len + 1 - i);
+            }
+            int r = (sum * 10) % 11;
+            d[len] = r == 10 ? 0 : r;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int x : d) {
+            sb.append(x);
+        }
+        return sb.toString();
+    }
+
+    private String registerCourier(String name, double lat, double lng, String device) throws Exception {
+        return registerCourier(name, lat, lng, device, newCpf(), status().isCreated()).get("token").asText();
+    }
+
+    private JsonNode registerCourier(String name, double lat, double lng, String device, String cpf, ResultMatcher expected)
+            throws Exception {
+        rateLimiter.reset(); // o cadastro de entregador é limitado por IP (5 por janela)
         Map<String, Object> body = new HashMap<>();
         body.put("name", name);
         body.put("email", "e-" + UUID.randomUUID() + "@entregador.test");
         body.put("phone", "11988887777");
+        body.put("cpf", cpf);
         body.put("password", "Senha1234");
         body.put("vehicle", "MOTO");
         body.put("city", "Cidade Teste");
@@ -694,7 +766,15 @@ class StoreFlowIntegrationTest {
         body.put("baseLat", lat);
         body.put("baseLng", lng);
         body.put("radiusKm", 10);
-        return call(null, post("/api/auth/register-courier"), body, status().isCreated()).get("token").asText();
+        var req = post("/api/auth/register-courier");
+        if (device != null) {
+            req.header("X-Device-Id", device);
+        }
+        return call(null, req, body, expected);
+    }
+
+    private static MockHttpServletRequestBuilder withDevice(MockHttpServletRequestBuilder req, String device) {
+        return req.header("X-Device-Id", device);
     }
 
     private static String wrong(String code) {

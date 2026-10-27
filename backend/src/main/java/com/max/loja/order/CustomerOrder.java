@@ -72,6 +72,9 @@ public class CustomerOrder extends TenantEntity {
     private Double deliveryLng;
     private java.math.BigDecimal deliveryDistanceKm;
 
+    /** Frete cheio (o que o entregador recebe, direto de quem paga: o cliente em {@code deliveryFee}, ou a loja se for 0). */
+    private java.math.BigDecimal courierFreight;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 

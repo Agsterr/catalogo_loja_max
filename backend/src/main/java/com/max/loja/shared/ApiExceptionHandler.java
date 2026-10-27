@@ -65,6 +65,11 @@ public class ApiExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Você não tem permissão para isso.");
     }
 
+    @ExceptionHandler(SubscriptionRequiredException.class)
+    ProblemDetail subscriptionRequired(SubscriptionRequiredException ex) {
+        return ex.toProblem();
+    }
+
     @ExceptionHandler(AccountBlockedException.class)
     ProblemDetail blocked(AccountBlockedException ex) {
         return ex.toProblem();

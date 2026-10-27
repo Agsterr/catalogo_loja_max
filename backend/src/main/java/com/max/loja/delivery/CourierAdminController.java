@@ -5,6 +5,8 @@ import com.max.loja.delivery.CourierDtos.ReasonRequest;
 import com.max.loja.shared.PageResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,6 +30,28 @@ public class CourierAdminController {
                                            @RequestParam(required = false) String q, @RequestParam(required = false) Integer page,
                                            @RequestParam(required = false) Integer size) {
         return service.adminList(status, q, page, size);
+    }
+
+    /** Assinaturas esperando confirmação do pagamento. */
+    @GetMapping("/api/platform/courier-payments")
+    public PageResponse<CourierDtos.AdminPayment> payments(@RequestParam(required = false) String status,
+                                                           @RequestParam(required = false) Integer page,
+                                                           @RequestParam(required = false) Integer size) {
+        return service.adminPayments(status, page, size);
+    }
+
+    /** Pagamento recebido: libera a assinatura do entregador (30 dias). */
+    @PostMapping("/api/platform/courier-payments/{id}/confirm")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void confirm(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id) {
+        service.confirmPayment(id, Long.valueOf(jwt.getSubject()));
+    }
+
+    /** Cortesia: libera dias de assinatura sem pagamento. */
+    @PostMapping("/api/platform/couriers/{id}/grant")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void grant(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id, @Valid @RequestBody CourierDtos.GrantRequest req) {
+        service.grantDays(id, req.days(), Long.valueOf(jwt.getSubject()));
     }
 
     @PostMapping("/api/platform/couriers/{id}/approve")

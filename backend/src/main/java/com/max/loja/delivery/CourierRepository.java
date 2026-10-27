@@ -14,6 +14,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface CourierRepository extends JpaRepository<Courier, Long> {
 
+    boolean existsByCpfHash(String cpfHash);
+
     /** Trava só o entregador (não há disputa entre entregadores diferentes). */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from Courier c where c.userId = :id")

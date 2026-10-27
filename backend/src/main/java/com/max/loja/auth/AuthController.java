@@ -80,9 +80,10 @@ public class AuthController {
     @PostMapping("/api/auth/register-courier")
     @ResponseStatus(HttpStatus.CREATED)
     public TokenResponse registerCourier(@Valid @RequestBody com.max.loja.delivery.CourierDtos.RegisterRequest req,
+                                         @org.springframework.web.bind.annotation.RequestHeader(value = "X-Device-Id", required = false) String deviceId,
                                          HttpServletRequest http) {
         rateLimiter.check("register-courier-ip:" + ClientIp.of(http), 5);
-        return service.registerCourier(req);
+        return service.registerCourier(req, deviceId);
     }
 
     @PostMapping("/api/auth/login")

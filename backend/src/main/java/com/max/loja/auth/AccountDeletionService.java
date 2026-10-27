@@ -51,7 +51,7 @@ public class AccountDeletionService {
                 throw new BusinessException("Conclua ou cancele suas corridas em andamento antes de excluir a conta.");
             }
             jdbc.update("""
-                    update courier set phone = '-', plate = null, base_lat = null, base_lng = null, last_lat = null,
+                    update courier set phone = '-', plate = null, cpf_enc = null, base_lat = null, base_lng = null, last_lat = null,
                     last_lng = null, online = false, status = 'BLOCKED', status_reason = 'Conta excluída' where user_id = ?""", userId);
         }
         jdbc.update("update orders set address = null, notes = null, delivery_lat = null, delivery_lng = null where customer_id = ?",

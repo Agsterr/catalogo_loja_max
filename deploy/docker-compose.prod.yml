@@ -87,6 +87,8 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
+      BILLING_PIX_KEY: ${BILLING_PIX_KEY:-}
+      BILLING_PIX_HOLDER: ${BILLING_PIX_HOLDER:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://lojamax.focodev.com.br}
       APP_TIMEZONE: America/Sao_Paulo
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-https://lojamax.focodev.com.br}

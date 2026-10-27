@@ -59,7 +59,12 @@ public class StoreService {
      * Quanto custa a entrega para quem está em ({@code lat}, {@code lng}): {@code needsLocation} quando a loja cobra por
      * distância e o app ainda não mandou a posição; {@code available=false} fora da área de entrega.
      */
-    public record DeliveryQuote(boolean available, boolean needsLocation, Double distanceKm, BigDecimal fee, String message) {
+    public record DeliveryQuote(boolean available, boolean needsLocation, Double distanceKm, BigDecimal fee, String message,
+                                BigDecimal freight, String freightPayer) {
+
+        public DeliveryQuote(boolean available, boolean needsLocation, Double distanceKm, BigDecimal fee, String message) {
+            this(available, needsLocation, distanceKm, fee, message, null, null);
+        }
     }
 
     public record CityCount(String city, String state, long total) {
@@ -99,7 +104,7 @@ public class StoreService {
 
     public DeliveryQuote deliveryQuote(Store s, Double lat, Double lng, BigDecimal subtotal) {
         if (s.isCourierDelivery() && s.getLatitude() != null && s.getLongitude() != null) {
-            return courierQuote(s, lat, lng);
+            return courierQuote(s, lat, lng, subtotal);
         }
         boolean free = s.getFreeDeliveryFrom() != null && subtotal.compareTo(s.getFreeDeliveryFrom()) >= 0;
         List<DeliveryZones.Zone> zones = DeliveryZones.parse(s.getDeliveryZones(), json);
@@ -116,8 +121,8 @@ public class StoreService {
                         + " (até " + zones.get(zones.size() - 1).upToKm() + " km)."));
     }
 
-    /** Entregador da plataforma: taxa pela distância (fórmula da plataforma); a loja não dá frete grátis nem faixas. */
-    private DeliveryQuote courierQuote(Store s, Double lat, Double lng) {
+    /** Entregador da plataforma: frete pela distância (fórmula da plataforma), sem faixas da loja. */
+    private DeliveryQuote courierQuote(Store s, Double lat, Double lng, BigDecimal subtotal) {
         if (lat == null || lng == null || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
             return new DeliveryQuote(false, true, null, null, "Use sua localização para calcular a entrega.");
         }
@@ -126,7 +131,12 @@ public class StoreService {
             return new DeliveryQuote(false, false, km, null, "Você está a " + km + " km: fora da área de entrega (até "
                     + courierPricing.maxKm() + " km).");
         }
-        return new DeliveryQuote(true, false, km, courierPricing.customerFee(km), null);
+        // frete = o que o entregador recebe, direto de quem paga (a plataforma não passa dinheiro): o cliente, ou a loja
+        // quando o pedido passa do valor de frete grátis
+        BigDecimal freight = courierPricing.customerFee(km);
+        boolean storePays = s.getFreeDeliveryFrom() != null && subtotal.compareTo(s.getFreeDeliveryFrom()) >= 0;
+        return new DeliveryQuote(true, false, km, storePays ? BigDecimal.ZERO : freight, null, freight,
+                storePays ? "STORE" : "CUSTOMER");
     }
 
     /** Distância em linha reta (haversine), em km. */

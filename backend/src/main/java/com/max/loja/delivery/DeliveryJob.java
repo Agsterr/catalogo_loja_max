@@ -71,12 +71,16 @@ public class DeliveryJob {
     @Column(nullable = false)
     private BigDecimal distanceKm;
 
-    /** O que o cliente pagou pela entrega e o que fica para o entregador (menos a comissão). */
+    /** O que o cliente paga ao entregador (0 quando a loja paga o frete) e o frete que o entregador recebe. */
     @Column(nullable = false)
     private BigDecimal customerFee;
 
     @Column(nullable = false)
     private BigDecimal courierFee;
+
+    /** Quem paga o frete direto ao entregador: CUSTOMER (na entrega) ou STORE (na coleta). */
+    @Column(nullable = false)
+    private String freightPayer = "CUSTOMER";
 
     /** A loja mostra o de coleta; o cliente mostra o de entrega. O entregador digita os dois (nunca os vê). */
     @Column(nullable = false)

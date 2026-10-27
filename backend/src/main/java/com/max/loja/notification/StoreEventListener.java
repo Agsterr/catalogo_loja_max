@@ -13,6 +13,7 @@ import com.max.loja.order.DeliveryMethod;
 import com.max.loja.order.OrderService;
 import com.max.loja.order.OrderStatus;
 import com.max.loja.promotion.Promotion;
+import com.max.loja.shared.Money;
 import com.max.loja.promotion.PromotionRepository;
 import com.max.loja.push.PushNotifier;
 import org.springframework.context.event.EventListener;
@@ -126,12 +127,16 @@ class StoreEventListener {
             return;
         }
         String who = users.findById(j.getCourierId()).map(AppUser::getName).orElse("O entregador");
+        boolean storePays = "STORE".equals(j.getFreightPayer());
         notifications.toTeam(Notification.Type.DELIVERY_ASSIGNED, "Entregador a caminho · #" + j.getOrderCode(),
-                who + " aceitou a entrega. Passe o código de coleta que está no pedido quando ele chegar.",
+                who + " aceitou a entrega. Passe o código de coleta que está no pedido quando ele chegar."
+                        + (storePays ? " O frete de " + Money.format(j.getCourierFee()) + " é por conta da loja: pague ao entregador na coleta." : ""),
                 Target.order(j.getOrderId()), "delivery-accepted:" + j.getId() + ":" + j.getOffers());
         CustomerOrder o = orders.find(j.getOrderId());
         notifications.toUser(o.getCustomer().getId(), Notification.Type.ORDER_STATUS, "Entregador a caminho da loja · #" + j.getOrderCode(),
-                who + " vai levar seu pedido. Na entrega, mostre o código que está no pedido.", Target.order(j.getOrderId()),
+                who + " vai levar seu pedido. Na entrega, diga o código que está no pedido"
+                        + (storePays ? "." : " e pague o frete de " + Money.format(j.getCustomerFee()) + " ao entregador (dinheiro ou Pix)."),
+                Target.order(j.getOrderId()),
                 "delivery-accepted-customer:" + j.getId() + ":" + j.getOffers());
     }
 

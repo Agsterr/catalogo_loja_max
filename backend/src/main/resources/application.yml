@@ -77,3 +77,16 @@ app:
     r2-access-key-id: ${R2_ACCESS_KEY_ID:}
     r2-secret-access-key: ${R2_SECRET_ACCESS_KEY:}
     r2-public-base-url: ${R2_PUBLIC_BASE_URL:}
+
+  # Entregador da plataforma: preço do frete (pago direto ao entregador) e regras da corrida
+  delivery:
+    base-fee: ${DELIVERY_BASE_FEE:4.00}
+    per-km: ${DELIVERY_PER_KM:1.50}
+    min-fee: ${DELIVERY_MIN_FEE:6.00}
+    max-km: ${DELIVERY_MAX_KM:15}
+  # Assinatura do entregador (único dinheiro que passa pela plataforma): entregas grátis e mensalidade
+  billing:
+    courier-monthly: ${BILLING_COURIER_MONTHLY:24.99}
+    free-deliveries: ${BILLING_FREE_DELIVERIES:5}
+    pix-key: ${BILLING_PIX_KEY:}
+    pix-holder: ${BILLING_PIX_HOLDER:}

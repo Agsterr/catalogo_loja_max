@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -46,8 +47,9 @@ public class CourierController {
     }
 
     @PostMapping("/api/courier/online")
-    public ProfileResponse online(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody OnlineRequest req) {
-        return service.setOnline(CurrentUser.of(jwt).id(), req);
+    public ProfileResponse online(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody OnlineRequest req,
+                                  @RequestHeader(value = "X-Device-Id", required = false) String deviceId) {
+        return service.setOnline(CurrentUser.of(jwt).id(), req, deviceId);
     }
 
     /** Mural: corridas abertas perto de {@code lat,lng} (ou da última posição/base), da mais perto para a mais longe. */
@@ -75,8 +77,9 @@ public class CourierController {
     }
 
     @PostMapping("/api/courier/jobs/{id}/accept")
-    public JobDetail accept(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id) {
-        return service.accept(CurrentUser.of(jwt).id(), id);
+    public JobDetail accept(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id,
+                            @RequestHeader(value = "X-Device-Id", required = false) String deviceId) {
+        return service.accept(CurrentUser.of(jwt).id(), id, deviceId);
     }
 
     @PostMapping("/api/courier/jobs/{id}/pickup")
@@ -85,14 +88,28 @@ public class CourierController {
     }
 
     @PostMapping("/api/courier/jobs/{id}/deliver")
-    public JobDetail deliver(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id, @Valid @RequestBody CodeRequest req) {
-        return service.deliver(CurrentUser.of(jwt).id(), id, req.code());
+    public JobDetail deliver(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id, @Valid @RequestBody CodeRequest req,
+                             @RequestHeader(value = "X-Device-Id", required = false) String deviceId) {
+        return service.deliver(CurrentUser.of(jwt).id(), id, req.code(), deviceId);
     }
 
     @PostMapping("/api/courier/jobs/{id}/cancel")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id, @RequestBody(required = false) CancelRequest req) {
         service.cancel(CurrentUser.of(jwt).id(), id, req == null ? null : req.reason());
+    }
+
+    /** Entregas grátis que sobram, assinatura e se pode aceitar corrida (o ID do aparelho vai em {@code X-Device-Id}). */
+    @GetMapping("/api/courier/subscription")
+    public CourierDtos.SubscriptionResponse subscription(@AuthenticationPrincipal Jwt jwt,
+                                                         @RequestHeader(value = "X-Device-Id", required = false) String deviceId) {
+        return service.subscription(CurrentUser.of(jwt).id(), deviceId);
+    }
+
+    /** Gera a cobrança da mensalidade e diz como pagar. */
+    @PostMapping("/api/courier/subscription/checkout")
+    public PaymentProvider.Instructions checkout(@AuthenticationPrincipal Jwt jwt) {
+        return service.checkout(CurrentUser.of(jwt).id());
     }
 
     @GetMapping("/api/courier/earnings")

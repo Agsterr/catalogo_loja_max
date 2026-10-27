@@ -193,12 +193,14 @@ public class OrderService {
                 order.setDeliveryLat(req.deliveryLat());
                 order.setDeliveryLng(req.deliveryLng());
                 order.setDeliveryDistanceKm(BigDecimal.valueOf(quote.distanceKm()));
+                order.setCourierFreight(quote.freight());
             }
         }
         order.setSubtotal(Money.round(subtotal));
         order.setDiscount(Money.round(saved));
         order.setDeliveryFee(Money.round(fee));
-        order.setTotal(Money.round(subtotal.add(fee)));
+        // entregador da plataforma: o frete é pago direto a ele, então o total do pedido (o que a loja recebe) é só dos produtos
+        order.setTotal(Money.round(order.isCourierDelivery() ? subtotal : subtotal.add(fee)));
         addEvent(order, OrderStatus.PENDING, null, customerId, now);
         orders.save(order);
 
@@ -419,7 +421,8 @@ public class OrderService {
         if (job == null) {
             // ainda não abriu: falta o pagamento e/ou a confirmação da loja
             String wait = !o.isPaid() ? "Aguardando o pagamento" : "Aguardando a loja confirmar";
-            return new CourierInfo("WAITING", wait, null, null, null, null, null, null, false);
+            return new CourierInfo("WAITING", wait, null, null, null, null, null, null, false, o.getCourierFreight(),
+                    o.getDeliveryFee().signum() > 0 ? "CUSTOMER" : "STORE");
         }
         var courier = job.getCourierId() == null ? null : couriers.findById(job.getCourierId()).orElse(null);
         String name = courier == null ? null : users.findById(courier.getUserId()).map(AppUser::getName).orElse(null);
@@ -427,7 +430,8 @@ public class OrderService {
         return new CourierInfo(job.getStatus().name(), job.getStatus().label(), shown || job.getStatus() == JobStatus.DELIVERED ? name : null,
                 shown ? courier.getPhone() : null, shown && courier != null ? courier.getVehicle().label() : null,
                 forTeam && shown ? job.getPickupCode() : null, !forTeam && job.getStatus().active() ? job.getDeliveryCode() : null,
-                job.getStatus() == JobStatus.OPEN ? job.getExpiresAt() : null, forTeam && job.getStatus() == JobStatus.EXPIRED);
+                job.getStatus() == JobStatus.OPEN ? job.getExpiresAt() : null, forTeam && job.getStatus() == JobStatus.EXPIRED,
+                o.getCourierFreight(), job.getFreightPayer());
     }
 
     private String cover(Long productId) {
