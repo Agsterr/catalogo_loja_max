@@ -1,0 +1,77 @@
+spring:
+  application:
+    name: loja-api
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/loja}
+    username: ${DB_USER:loja}
+    password: ${DB_PASSWORD:loja}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      # vitrine: carrega tamanhos e fotos dos produtos da página em lote (sem N+1)
+      hibernate.default_batch_fetch_size: 50
+  servlet:
+    multipart:
+      # Fotos dos produtos (comprimidas no servidor antes de ir para o R2)
+      max-file-size: ${APP_MEDIA_MAX_UPLOAD_MB:15}MB
+      max-request-size: 20MB
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: ${PORT:8080}
+  # Erros saem só como ProblemDetail (ApiExceptionHandler): nada de stack trace para o cliente
+  error:
+    include-message: never
+    include-stacktrace: never
+  forward-headers-strategy: native
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+app:
+  # Fuso da loja: datas dos pedidos e das promoções (aplicado à JVM no início, veja LojaApplication)
+  timezone: ${APP_TIMEZONE:America/Sao_Paulo}
+  jwt:
+    # Troque em produção (mínimo 32 caracteres)!
+    secret: ${JWT_SECRET:dev-secret-troque-em-producao-0123456789abcdef}
+    # Token de 24h; o app renova sozinho em /api/me/token. Bloqueio, troca de senha e "sair de todos os
+    # aparelhos" derrubam os tokens já emitidos na hora (AccountStatusFilter + token_version).
+    ttl: ${JWT_TTL:24h}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
+  # Dono da loja criado/atualizado no boot. Vazio = não cria.
+  owner:
+    name: ${STORE_OWNER_NAME:Dono da loja}
+    email: ${STORE_OWNER_EMAIL:}
+    password: ${STORE_OWNER_PASSWORD:}
+  security:
+    # Tentativas de login erradas por e-mail antes de travar por alguns minutos
+    max-login-failures: ${LOGIN_MAX_FAILURES:5}
+    login-lock: ${LOGIN_LOCK:15m}
+  # Push (Firebase Cloud Messaging): JSON da conta de serviço do Firebase (texto ou base64). Vazio = desligado.
+  push:
+    service-account-json: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64:}
+    # Procura promoções que começaram e avisa os clientes
+    promotions-cron: ${PUSH_PROMOTIONS_CRON:0 */5 * * * *}
+  # E-mails (recuperar senha): Resend (https://resend.com). Sem a chave, o e-mail não é enviado.
+  mail:
+    resend-api-key: ${RESEND_API_KEY:}
+    from: ${MAIL_FROM:Loja Max <nao-responda@lojamax.com.br>}
+    site-url: ${APP_PUBLIC_URL:http://localhost:8080}
+  # Fotos dos produtos: Cloudflare R2 ou, sem R2, disco local (servidas em /api/public/media/**)
+  media:
+    storage-path: ${APP_MEDIA_PATH:/app/media}
+    public-base-url: ${APP_PUBLIC_URL:http://localhost:8080}
+    max-photos-per-product: ${APP_MEDIA_MAX_PHOTOS:8}
+    r2-bucket: ${R2_BUCKET:}
+    r2-endpoint: ${R2_ENDPOINT:}
+    r2-access-key-id: ${R2_ACCESS_KEY_ID:}
+    r2-secret-access-key: ${R2_SECRET_ACCESS_KEY:}
+    r2-public-base-url: ${R2_PUBLIC_BASE_URL:}

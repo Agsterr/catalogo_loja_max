@@ -1,0 +1,22 @@
+# Java
+backend/target/
+*.class
+# Flutter / Dart
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+mobile/**/android/local.properties
+mobile/**/android/key.properties
+mobile/**/android/app/google-services.json
+mobile/**/ios/Runner/GoogleService-Info.plist
+*.jks
+*.keystore
+# Env / IDE
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+*.iml
+.DS_Store
