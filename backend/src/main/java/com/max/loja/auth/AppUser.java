@@ -13,7 +13,10 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
-/** Usuário: equipe da loja e clientes no mesmo cadastro, separados pelo papel. */
+/**
+ * Usuário. Não usa {@code @TenantId}: o login acha a pessoa pelo e-mail antes de saber a loja. Equipe tem
+ * {@link #storeId}; cliente (conta única para todas as lojas) e admin da plataforma não.
+ */
 @Getter
 @Setter
 @Entity
@@ -31,6 +34,9 @@ public class AppUser {
     private String email;
 
     private String phone;
+
+    /** Loja da equipe (dono/funcionário); nulo para cliente e admin da plataforma. */
+    private Long storeId;
 
     @Column(nullable = false)
     private String passwordHash;
@@ -52,6 +58,10 @@ public class AppUser {
     /** Tentativas de login erradas seguidas; ao passar do limite trava até {@link #lockedUntil}. */
     private int failedLogins;
     private LocalDateTime lockedUntil;
+
+    /** Verificação em duas etapas: segredo cifrado ({@code SecretBox}) e se está ligada. */
+    private String totpSecret;
+    private boolean totpEnabled;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();

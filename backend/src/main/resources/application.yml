@@ -46,12 +46,14 @@ app:
     ttl: ${JWT_TTL:24h}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
-  # Dono da loja criado/atualizado no boot. Vazio = não cria.
-  owner:
-    name: ${STORE_OWNER_NAME:Dono da loja}
-    email: ${STORE_OWNER_EMAIL:}
-    password: ${STORE_OWNER_PASSWORD:}
+  # Administrador da plataforma (bloqueia lojas e contas), criado/atualizado no boot. Vazio = não cria.
+  # Cada loja se cadastra pelo app (/api/auth/register-store) e o dono gerencia a equipe dela.
+  platform-admin:
+    email: ${PLATFORM_ADMIN_EMAIL:}
+    password: ${PLATFORM_ADMIN_PASSWORD:}
   security:
+    # Chave dos segredos cifrados no banco (verificação em duas etapas). Vazio = derivada do JWT_SECRET.
+    encryption-key: ${APP_ENCRYPTION_KEY:}
     # Tentativas de login erradas por e-mail antes de travar por alguns minutos
     max-login-failures: ${LOGIN_MAX_FAILURES:5}
     login-lock: ${LOGIN_LOCK:15m}

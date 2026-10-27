@@ -10,8 +10,9 @@ import com.max.loja.catalog.CatalogDtos.VariantResponse;
 import com.max.loja.event.StoreEvents;
 import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.NotFoundException;
+import com.max.loja.shared.PageResponse;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -84,9 +85,11 @@ public class StockService {
     }
 
     @Transactional(readOnly = true)
-    public List<MovementResponse> history(Long variantId) {
-        return movements.findByVariantIdOrderByIdDesc(variantId, PageRequest.of(0, 100)).stream()
-                .map(MovementResponse::from).toList();
+    public PageResponse<MovementResponse> history(Long variantId, Integer page, Integer size) {
+        variants.findById(variantId).orElseThrow(() -> new NotFoundException("Tamanho/cor não encontrado"));
+        return PageResponse.of(movements.findByVariantId(variantId,
+                PageResponse.request(page, size, Sort.by(Sort.Order.desc("id")))),
+                MovementResponse::from);
     }
 
     @Transactional(readOnly = true)

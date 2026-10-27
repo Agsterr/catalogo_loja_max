@@ -32,10 +32,13 @@ import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.Money;
 import com.max.loja.shared.NotFoundException;
 import com.max.loja.shared.PageResponse;
-import com.max.loja.store.StoreSettings;
-import com.max.loja.store.StoreSettingsRepository;
+import com.max.loja.auth.StaffService;
+import com.max.loja.store.Store;
+import com.max.loja.store.StoreService;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -54,21 +57,23 @@ public class OrderService {
     private final AppUserRepository users;
     private final StockService stock;
     private final PricingService pricing;
-    private final StoreSettingsRepository settings;
+    private final StoreService stores;
+    private final StaffService staff;
     private final ProductPhotoRepository photos;
     private final ApplicationEventPublisher events;
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
 
     public OrderService(OrderRepository orders, ProductVariantRepository variants, AppUserRepository users,
-                        StockService stock, PricingService pricing, StoreSettingsRepository settings,
+                        StockService stock, PricingService pricing, StoreService stores, StaffService staff,
                         ProductPhotoRepository photos, ApplicationEventPublisher events, Clock clock) {
         this.orders = orders;
         this.variants = variants;
         this.users = users;
         this.stock = stock;
         this.pricing = pricing;
-        this.settings = settings;
+        this.stores = stores;
+        this.staff = staff;
         this.photos = photos;
         this.events = events;
         this.clock = clock;
@@ -90,7 +95,13 @@ public class OrderService {
         if (orders.countByCustomerIdAndCreatedAtAfter(customerId, now.minusDays(1)) >= MAX_ORDERS_PER_DAY) {
             throw new BusinessException("Limite de pedidos do dia atingido. Fale com a loja pelo WhatsApp.");
         }
-        StoreSettings store = settings.current();
+        // bloqueado por esta loja (pedidos falsos etc.): não compra aqui, mas segue comprando nas outras
+        staff.blockReason(customerId).ifPresent(reason -> {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, reason.isBlank()
+                    ? "Esta loja não está aceitando pedidos da sua conta. Fale com ela pelo WhatsApp."
+                    : "Esta loja bloqueou seus pedidos: " + reason);
+        });
+        Store store = stores.current();
         String address = req.address() == null ? null : req.address().trim();
         if (req.deliveryMethod() == DeliveryMethod.DELIVERY) {
             if (!store.isDeliveryEnabled()) {

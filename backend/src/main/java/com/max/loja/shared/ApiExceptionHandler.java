@@ -70,6 +70,11 @@ public class ApiExceptionHandler {
         return ex.toProblem();
     }
 
+    @ExceptionHandler(TwoFactorRequiredException.class)
+    ProblemDetail twoFactor(TwoFactorRequiredException ex) {
+        return ex.toProblem();
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     ProblemDetail status(ResponseStatusException ex) {
         return ProblemDetail.forStatusAndDetail(ex.getStatusCode(), ex.getReason());

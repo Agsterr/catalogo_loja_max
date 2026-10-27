@@ -9,10 +9,15 @@ import com.max.loja.auth.AuthDtos.DeleteAccountRequest;
 import com.max.loja.auth.AuthDtos.ForgotPasswordRequest;
 import com.max.loja.auth.AuthDtos.LoginRequest;
 import com.max.loja.auth.AuthDtos.RegisterRequest;
+import com.max.loja.auth.AuthDtos.RegisterStoreRequest;
 import com.max.loja.auth.AuthDtos.ResetPasswordRequest;
 import com.max.loja.auth.AuthDtos.TokenResponse;
+import com.max.loja.auth.AuthDtos.TwoFactorCodeRequest;
+import com.max.loja.auth.AuthDtos.TwoFactorDisableRequest;
+import com.max.loja.auth.AuthDtos.TwoFactorSetupResponse;
 import com.max.loja.auth.AuthDtos.UpdateProfileRequest;
 import com.max.loja.auth.AuthDtos.UserResponse;
+import com.max.loja.security.AuditService;
 import com.max.loja.shared.ClientIp;
 import com.max.loja.shared.PageResponse;
 import com.max.loja.shared.RateLimiter;
@@ -39,9 +44,14 @@ public class AuthController {
     private final AccountDeletionService deletion;
     private final PasswordResetService passwordReset;
     private final RateLimiter rateLimiter;
+    private final TwoFactorService twoFactor;
+    private final AuditService audit;
 
     public AuthController(AuthService service, StaffService staff, AccountDeletionService deletion,
-                          PasswordResetService passwordReset, RateLimiter rateLimiter) {
+                          PasswordResetService passwordReset, RateLimiter rateLimiter, TwoFactorService twoFactor,
+                          AuditService audit) {
+        this.twoFactor = twoFactor;
+        this.audit = audit;
         this.service = service;
         this.staff = staff;
         this.deletion = deletion;
@@ -58,9 +68,18 @@ public class AuthController {
         return service.register(req);
     }
 
+    /** Abre uma loja nova na plataforma (quem cadastra vira o dono). */
+    @PostMapping("/api/auth/register-store")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TokenResponse registerStore(@Valid @RequestBody RegisterStoreRequest req, HttpServletRequest http) {
+        rateLimiter.check("register-store-ip:" + ClientIp.of(http), 5);
+        return service.registerStore(req);
+    }
+
     @PostMapping("/api/auth/login")
     public TokenResponse login(@Valid @RequestBody LoginRequest req, HttpServletRequest http) {
         rateLimiter.check("login-ip:" + ClientIp.of(http), 30);
+        rateLimiter.check("login-mail:" + req.email().trim().toLowerCase(), 20);
         return service.login(req);
     }
 
@@ -112,6 +131,42 @@ public class AuthController {
         service.logoutEverywhere(id(jwt));
     }
 
+    // --- verificação em duas etapas ---
+
+    @PostMapping("/api/me/2fa/setup")
+    public TwoFactorSetupResponse setupTwoFactor(@AuthenticationPrincipal Jwt jwt) {
+        return twoFactor.setup(id(jwt));
+    }
+
+    @PostMapping("/api/me/2fa/enable")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void enableTwoFactor(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody TwoFactorCodeRequest req) {
+        rateLimiter.check("2fa-user:" + id(jwt), 10);
+        twoFactor.enable(id(jwt), req.code());
+    }
+
+    @PostMapping("/api/me/2fa/disable")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void disableTwoFactor(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody TwoFactorDisableRequest req) {
+        rateLimiter.check("2fa-user:" + id(jwt), 10);
+        twoFactor.disable(id(jwt), req.password(), req.code());
+    }
+
+    /** Acessos e mudanças da própria conta (entradas, falhas, troca de senha...). */
+    @GetMapping("/api/me/security-events")
+    public PageResponse<AuditService.EventResponse> mySecurity(@AuthenticationPrincipal Jwt jwt,
+                                                               @RequestParam(required = false) Integer page,
+                                                               @RequestParam(required = false) Integer size) {
+        return audit.ofUser(id(jwt), page, size);
+    }
+
+    /** Auditoria da loja (dono). */
+    @GetMapping("/api/store/audit")
+    public PageResponse<AuditService.EventResponse> storeAudit(@RequestParam(required = false) Integer page,
+                                                               @RequestParam(required = false) Integer size) {
+        return audit.ofStore(com.max.loja.shared.TenantContext.get(), page, size);
+    }
+
     @PostMapping("/api/me/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteMe(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody DeleteAccountRequest req) {
@@ -139,20 +194,22 @@ public class AuthController {
     }
 
     @GetMapping("/api/store/customers")
-    public PageResponse<UserResponse> customers(@RequestParam(required = false) String q,
+    public PageResponse<StaffService.CustomerResponse> customers(@RequestParam(required = false) String q,
                                                 @RequestParam(required = false) Integer page,
                                                 @RequestParam(required = false) Integer size) {
         return staff.customers(q, page, size);
     }
 
     @PostMapping("/api/store/customers/{customerId}/block")
-    public UserResponse block(@PathVariable Long customerId, @Valid @RequestBody BlockRequest req) {
-        return staff.block(customerId, req.reason(), true);
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void block(@AuthenticationPrincipal Jwt jwt, @PathVariable Long customerId, @Valid @RequestBody BlockRequest req) {
+        staff.block(id(jwt), customerId, req.reason(), true);
     }
 
     @PostMapping("/api/store/customers/{customerId}/unblock")
-    public UserResponse unblock(@PathVariable Long customerId) {
-        return staff.block(customerId, null, false);
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void unblock(@AuthenticationPrincipal Jwt jwt, @PathVariable Long customerId) {
+        staff.block(id(jwt), customerId, null, false);
     }
 
     private static Long id(Jwt jwt) {

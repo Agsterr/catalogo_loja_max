@@ -6,15 +6,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.max.loja.auth.AppUser;
+import com.max.loja.shared.TenantEntity;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
@@ -26,11 +24,7 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(name = "orders")
-public class CustomerOrder {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class CustomerOrder extends TenantEntity {
 
     /** Código curto que o cliente vê e fala no WhatsApp (ex.: K7Q2MD). */
     @Column(nullable = false, unique = true)

@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 
 import com.max.loja.auth.AppUser;
 import com.max.loja.auth.AppUserRepository;
+import com.max.loja.shared.TenantContext;
 import org.springframework.stereotype.Service;
 
 /**
@@ -38,12 +39,12 @@ public class PushNotifier {
         this.clock = clock;
     }
 
-    /** Toda a equipe ativa (dono e funcionários) com o app logado. {@code event} identifica o aviso (não repete). */
+    /** A equipe ativa desta loja (dono e funcionários) com o app logado. {@code event} identifica o aviso (não repete). */
     public int toTeam(String event, String title, String body, Map<String, String> data) {
         if (!props.configured()) {
             return 0;
         }
-        List<PushDevice> staff = devices.findByApp(STAFF);
+        List<PushDevice> staff = devices.findTeamOf(TenantContext.get());
         Set<Long> eligible = users.findAllById(staff.stream().map(PushDevice::getUserId).filter(Objects::nonNull)
                         .collect(Collectors.toSet())).stream()
                 .filter(u -> u.isActive() && !u.isBlocked() && u.getRole().isTeam())
@@ -59,19 +60,19 @@ public class PushNotifier {
         return enqueue(devices.findByUserIdIn(List.of(userId)), event, title, body, data);
     }
 
-    /** Promoção: todos os celulares do app do cliente que aceitam promoções (com ou sem login). */
+    /** Promoção: celulares que seguem esta loja e aceitam promoções (com ou sem login). */
     public int promotion(String event, String title, String body, Map<String, String> data) {
         if (!props.configured()) {
             return 0;
         }
-        return enqueue(devices.findByAppAndPromoNotificationsTrue(CLIENT), event, title, body, data);
+        return enqueue(devices.findPromotionTargets(TenantContext.get()), event, title, body, data);
     }
 
     private int enqueue(List<PushDevice> targets, String event, String title, String body, Map<String, String> data) {
         LocalDateTime now = LocalDateTime.now(clock);
         int queued = 0;
         for (PushDevice d : targets) {
-            if (outbox.enqueue(d.getId(), d.getToken(), title, body, data, event + ":" + d.getId(), now)) {
+            if (outbox.enqueue(TenantContext.get(), d.getId(), d.getToken(), title, body, data, event + ":" + d.getId(), now)) {
                 queued++;
             }
         }

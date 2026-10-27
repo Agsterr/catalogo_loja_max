@@ -1,11 +1,10 @@
 package com.max.loja.catalog;
 
-import java.util.List;
-
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface StockMovementRepository extends JpaRepository<StockMovement, Long> {
 
-    List<StockMovement> findByVariantIdOrderByIdDesc(Long variantId, Pageable page);
+    Page<StockMovement> findByVariantId(Long variantId, Pageable page);
 }

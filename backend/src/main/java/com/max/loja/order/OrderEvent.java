@@ -7,10 +7,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import jakarta.persistence.ManyToOne;
+import com.max.loja.shared.TenantEntity;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -18,11 +16,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-public class OrderEvent {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class OrderEvent extends TenantEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     private CustomerOrder order;

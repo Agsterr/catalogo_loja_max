@@ -11,7 +11,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * Estado atual do usuário (existe, bloqueado, versão dos tokens), consultado a cada requisição autenticada
+ * Estado atual do usuário (existe, bloqueado — ele ou a loja dele —, versão dos tokens), consultado a cada requisição autenticada
  * para que bloqueio, troca de senha e exclusão valham também para tokens JWT já emitidos. Cache curto em
  * memória; quem muda o estado chama {@link #evict}.
  */
@@ -50,6 +50,11 @@ public class AccountStatusService {
         return status;
     }
 
+    /** Bloqueio de loja afeta a equipe toda: limpa tudo. */
+    public void evictAll() {
+        cache.clear();
+    }
+
     /** Limpa agora e de novo após o commit, para não recachear o estado antigo nesse intervalo. */
     public void evict(Long userId) {
         cache.remove(userId);
@@ -64,11 +69,20 @@ public class AccountStatusService {
     }
 
     private Status load(Long userId) {
-        List<Status> rows = jdbc.query("select active, blocked, blocked_reason, token_version, role from app_user where id = ?",
-                (rs, i) -> rs.getBoolean("active")
-                        ? new Status(true, rs.getBoolean("blocked"), rs.getString("blocked_reason"), rs.getInt("token_version"),
-                                rs.getString("role"))
-                        : Status.MISSING,
+        // equipe de loja bloqueada pela plataforma também fica de fora
+        List<Status> rows = jdbc.query("""
+                select u.active, u.blocked, u.blocked_reason, u.token_version, u.role,
+                       s.blocked as store_blocked, s.blocked_reason as store_reason
+                from app_user u left join store s on s.id = u.store_id where u.id = ?""",
+                (rs, i) -> {
+                    if (!rs.getBoolean("active")) {
+                        return Status.MISSING;
+                    }
+                    boolean storeBlocked = rs.getBoolean("store_blocked");
+                    return new Status(true, rs.getBoolean("blocked") || storeBlocked,
+                            rs.getBoolean("blocked") ? rs.getString("blocked_reason") : rs.getString("store_reason"),
+                            rs.getInt("token_version"), rs.getString("role"));
+                },
                 userId);
         return rows.isEmpty() ? Status.MISSING : rows.get(0);
     }

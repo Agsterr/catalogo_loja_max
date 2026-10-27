@@ -5,10 +5,16 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.max.loja.push.PushNotifier;
 import com.max.loja.security.CurrentUser;
-import org.springframework.data.domain.PageRequest;
+import com.max.loja.shared.PageResponse;
+import com.max.loja.shared.TenantContext;
+import com.max.loja.store.Store;
+import com.max.loja.store.StoreRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,16 +25,20 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class NotificationService {
 
+    /** {@code storeSlug}: o app abre o pedido/produto na loja certa. */
     public record NotificationResponse(Long id, Notification.Type type, Long orderId, Long productId, String title,
-                                       String message, LocalDateTime createdAt, boolean read) {
+                                       String message, LocalDateTime createdAt, boolean read, String storeSlug,
+                                       String storeName) {
 
-        static NotificationResponse from(Notification n) {
+        static NotificationResponse from(Notification n, Store store) {
             return new NotificationResponse(n.getId(), n.getType(), n.getOrderId(), n.getProductId(), n.getTitle(),
-                    n.getMessage(), n.getCreatedAt(), n.getReadAt() != null);
+                    n.getMessage(), n.getCreatedAt(), n.getReadAt() != null, store == null ? null : store.getSlug(),
+                    store == null ? null : store.getName());
         }
     }
 
-    public record Inbox(long unread, List<NotificationResponse> items) {
+    /** Página do sino; {@code unread} conta todos os não lidos (não só os da página). */
+    public record Inbox(long unread, List<NotificationResponse> items, int page, boolean hasMore) {
     }
 
     /** O que o aviso aponta (o app abre o pedido ou o produto ao tocar). */
@@ -44,11 +54,13 @@ public class NotificationService {
     }
 
     private final NotificationRepository repository;
+    private final StoreRepository stores;
     private final PushNotifier push;
     private final Clock clock;
 
-    public NotificationService(NotificationRepository repository, PushNotifier push, Clock clock) {
+    public NotificationService(NotificationRepository repository, StoreRepository stores, PushNotifier push, Clock clock) {
         this.repository = repository;
+        this.stores = stores;
         this.push = push;
         this.clock = clock;
     }
@@ -84,6 +96,7 @@ public class NotificationService {
         }
         Notification n = new Notification();
         n.setType(type);
+        n.setStoreId(TenantContext.get());
         n.setUserId(userId);
         n.setTitle(cut(title, 200));
         n.setMessage(cut(message, 500));
@@ -94,10 +107,11 @@ public class NotificationService {
         return repository.save(n);
     }
 
-    private static Map<String, String> data(String audience, Notification.Type type, Target target) {
+    private Map<String, String> data(String audience, Notification.Type type, Target target) {
         Map<String, String> data = new HashMap<>();
         data.put("type", type == Notification.Type.BACK_IN_STOCK ? "back_in_stock" : audience);
         data.put("kind", type.name());
+        stores.findById(TenantContext.get()).ifPresent(s -> data.put("slug", s.getSlug()));
         if (target.orderId() != null) {
             data.put("orderId", String.valueOf(target.orderId()));
         }
@@ -108,20 +122,30 @@ public class NotificationService {
     }
 
     @Transactional(readOnly = true)
-    public Inbox inbox(CurrentUser me) {
-        return new Inbox(repository.countUnread(me.id(), me.isTeam()),
-                repository.findVisible(me.id(), me.isTeam(), PageRequest.of(0, 50)).stream()
-                        .map(NotificationResponse::from).toList());
+    public Inbox inbox(CurrentUser me, Integer page, Integer size) {
+        Page<Notification> result = repository.findVisible(me.id(), storeOf(me),
+                PageResponse.request(page, size, Sort.unsorted()));
+        Map<Long, Store> byId = new HashMap<>();
+        stores.findAllById(result.getContent().stream().map(Notification::getStoreId).collect(Collectors.toSet()))
+                .forEach(s -> byId.put(s.getId(), s));
+        return new Inbox(repository.countUnread(me.id(), storeOf(me)),
+                result.getContent().stream().map(n -> NotificationResponse.from(n, byId.get(n.getStoreId()))).toList(),
+                result.getNumber(), result.hasNext());
     }
 
     @Transactional
     public void markAllRead(CurrentUser me) {
-        repository.markAllRead(me.id(), me.isTeam(), LocalDateTime.now(clock));
+        repository.markAllRead(me.id(), storeOf(me), LocalDateTime.now(clock));
     }
 
     @Transactional
     public void markRead(CurrentUser me, Long id) {
-        repository.markRead(id, me.id(), me.isTeam(), LocalDateTime.now(clock));
+        repository.markRead(id, me.id(), storeOf(me), LocalDateTime.now(clock));
+    }
+
+    /** Equipe vê o sino da loja do token; cliente (sem loja) vê os dele de todas. */
+    private static Long storeOf(CurrentUser me) {
+        return me.isTeam() ? TenantContext.get() : null;
     }
 
     private static String cut(String s, int max) {

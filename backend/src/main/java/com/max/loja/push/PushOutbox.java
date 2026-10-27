@@ -39,7 +39,7 @@ public class PushOutbox {
     }
 
     /** Grava o aviso; a mesma chave não entra duas vezes (devolve false se já existia). */
-    public boolean enqueue(long deviceId, String token, String title, String body, Map<String, String> data,
+    public boolean enqueue(Long tenantId, long deviceId, String token, String title, String body, Map<String, String> data,
                            String dedupeKey, LocalDateTime now) {
         String payload;
         try {
@@ -48,9 +48,10 @@ public class PushOutbox {
             throw new IllegalArgumentException(e);
         }
         return jdbc.update("""
-                insert into push_outbox (public_id, device_id, device_token, title, body, data, dedupe_key, created_at, next_attempt_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict do nothing""",
-                UUID.randomUUID().toString(), deviceId, token, cut(title, 200), cut(body, 500), payload,
+                insert into push_outbox (public_id, tenant_id, device_id, device_token, title, body, data, dedupe_key, created_at,
+                                         next_attempt_at)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict do nothing""",
+                UUID.randomUUID().toString(), tenantId, deviceId, token, cut(title, 200), cut(body, 500), payload,
                 cut(dedupeKey, 200), now, now) > 0;
     }
 

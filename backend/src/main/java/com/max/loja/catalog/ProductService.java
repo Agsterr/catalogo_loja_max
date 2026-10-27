@@ -19,6 +19,7 @@ import com.max.loja.catalog.CatalogDtos.VariantRequest;
 import com.max.loja.media.ProductPhotoService;
 import com.max.loja.promotion.PricingService;
 import com.max.loja.promotion.Promotion;
+import com.max.loja.security.AuditService;
 import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.NotFoundException;
 import com.max.loja.shared.PageResponse;
@@ -45,9 +46,12 @@ public class ProductService {
     private final ProductPhotoService photos;
     private final JdbcTemplate jdbc;
     private final Clock clock;
+    private final AuditService audit;
 
     public ProductService(ProductRepository products, CategoryRepository categories, StockService stock,
-                          PricingService pricing, ProductPhotoService photos, JdbcTemplate jdbc, Clock clock) {
+                          PricingService pricing, ProductPhotoService photos, JdbcTemplate jdbc, Clock clock,
+                          AuditService audit) {
+        this.audit = audit;
         this.products = products;
         this.categories = categories;
         this.stock = stock;
@@ -141,8 +145,9 @@ public class ProductService {
 
     /** Exclui se nunca foi vendido; senão só desativa (o histórico dos pedidos aponta para ele). */
     @Transactional
-    public boolean delete(Long id) {
+    public boolean delete(Long id, Long userId) {
         Product p = products.findById(id).orElseThrow(() -> new NotFoundException("Produto não encontrado"));
+        audit.record(AuditService.PRODUCT_DELETED, userId, p.getName());
         Integer sold = jdbc.queryForObject("select count(*) from order_item where product_id = ?", Integer.class, id);
         if (sold != null && sold > 0) {
             p.setActive(false);

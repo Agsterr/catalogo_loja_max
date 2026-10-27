@@ -15,11 +15,11 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
 
     boolean existsByEmailIgnoreCase(String email);
 
-    List<AppUser> findByRoleInAndActiveTrueOrderByName(List<Role> roles);
+    List<AppUser> findByStoreIdAndActiveTrueOrderByName(Long storeId);
 
+    /** Busca do admin da plataforma (todas as contas). */
     @Query("""
-            select u from AppUser u where u.role = com.max.loja.auth.Role.CUSTOMER and u.active = true
-            and (:q = '' or lower(u.name) like lower(concat('%', :q, '%')) or lower(u.email) like lower(concat('%', :q, '%'))
-                 or u.phone like concat('%', :q, '%'))""")
-    Page<AppUser> searchCustomers(@Param("q") String q, Pageable page);
+            select u from AppUser u where u.active = true
+            and (:q = '' or lower(u.name) like lower(concat('%', :q, '%')) or lower(u.email) like lower(concat('%', :q, '%')))""")
+    Page<AppUser> search(@Param("q") String q, Pageable page);
 }

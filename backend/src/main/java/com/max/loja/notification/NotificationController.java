@@ -9,10 +9,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Sino do app: a equipe vê os avisos da loja; o cliente, os dele. */
+/** Sino do app (paginado): a equipe vê os avisos da loja dela; o cliente, os dele em todas as lojas. */
 @RestController
 @RequestMapping("/api/notifications")
 public class NotificationController {
@@ -24,8 +25,9 @@ public class NotificationController {
     }
 
     @GetMapping
-    public Inbox inbox(@AuthenticationPrincipal Jwt jwt) {
-        return service.inbox(CurrentUser.of(jwt));
+    public Inbox inbox(@AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) Integer page,
+                       @RequestParam(required = false) Integer size) {
+        return service.inbox(CurrentUser.of(jwt), page, size);
     }
 
     @PostMapping("/read")

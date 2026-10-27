@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -26,6 +27,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.max.loja.push.PushOutboxWorker;
 import com.max.loja.push.PushSender;
+import com.max.loja.security.Totp;
 import com.max.loja.shared.RateLimiter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,14 +46,14 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /**
  * Fluxo ponta a ponta contra um PostgreSQL real (padrão: localhost:5432/loja_test, configurável via
- * TEST_DB_URL / DB_USER / DB_PASSWORD). Firebase "ligado" com envio simulado.
+ * TEST_DB_URL / DB_USER / DB_PASSWORD). Firebase "ligado" com envio simulado. Cada teste abre as próprias lojas.
  */
 @SpringBootTest(properties = {
         "spring.datasource.url=${TEST_DB_URL:jdbc:postgresql://localhost:5432/loja_test}",
         "spring.datasource.username=${DB_USER:loja}", "spring.datasource.password=${DB_PASSWORD:loja}",
         "app.push.service-account-json={\"project_id\":\"teste\"}", "app.push.worker-ms=3600000",
         "app.push.promotions-cron=-",
-        "app.owner.email=dono@loja.test", "app.owner.password=SenhaDoDono123"})
+        "app.platform-admin.email=admin@plataforma.test", "app.platform-admin.password=SenhaDoAdmin123"})
 @AutoConfigureMockMvc
 class StoreFlowIntegrationTest {
 
@@ -84,6 +86,17 @@ class StoreFlowIntegrationTest {
     @MockitoBean
     PushSender push;
 
+    record Shop(String slug, String owner) {
+
+        String base() {
+            return "/api/public/stores/" + slug;
+        }
+
+        String orders() {
+            return "/api/stores/" + slug + "/orders";
+        }
+    }
+
     @BeforeEach
     void setUp() {
         rateLimiter.reset();
@@ -92,12 +105,12 @@ class StoreFlowIntegrationTest {
 
     @Test
     void customerBuysAndStoreHandlesTheOrderWithNotifications() throws Exception {
-        String owner = login("dono@loja.test", "SenhaDoDono123");
+        Shop shop = openStore("Moda da Ana");
+        String owner = shop.owner();
         call(owner, post("/api/me/push-token"), Map.of("token", "cel-dono-" + UUID.randomUUID()), status().isNoContent());
 
         long category = id(call(owner, post("/api/store/categories"),
-                Map.of("department", "CALCADOS", "name", "Tênis " + UUID.randomUUID(), "position", 1, "active", true),
-                status().isCreated()));
+                Map.of("department", "CALCADOS", "name", "Tênis", "position", 1, "active", true), status().isCreated()));
         JsonNode product = call(owner, post("/api/store/products"), product("Tênis Runner", "CALCADOS", category, 200,
                         List.of(variant(null, "37", "Preto", 2), variant(null, "38", "Preto", 5))),
                 status().isCreated());
@@ -120,8 +133,10 @@ class StoreFlowIntegrationTest {
                 "endsAt", LocalDateTime.now(clock).plusDays(3).toString(), "active", true, "notifyCustomers", true),
                 status().isCreated());
 
-        // --- cliente ---
-        JsonNode card = call(null, get("/api/public/products?department=CALCADOS&onSale=true&size=100"), null, status().isOk());
+        // --- cliente: acha a loja na busca e abre a vitrine ---
+        JsonNode found = call(null, get("/api/public/stores?q=" + shop.slug()), null, status().isOk());
+        assertThat(found.get("items").findValuesAsText("slug")).contains(shop.slug());
+        JsonNode card = call(null, get(shop.base() + "/products?department=CALCADOS&onSale=true"), null, status().isOk());
         JsonNode mine = find(card.get("items"), productId);
         assertThat(mine.get("finalPrice").decimalValue()).isEqualByComparingTo("150.00");
         assertThat(mine.get("discountPercent").asInt()).isEqualTo(25);
@@ -129,7 +144,7 @@ class StoreFlowIntegrationTest {
 
         String ana = register("Ana Cliente");
         call(ana, post("/api/me/push-token"), Map.of("token", "cel-ana-" + UUID.randomUUID()), status().isNoContent());
-        JsonNode order = call(ana, post("/api/orders"), Map.of(
+        JsonNode order = call(ana, post(shop.orders()), Map.of(
                         "items", List.of(Map.of("variantId", v37, "quantity", 2), Map.of("variantId", v38, "quantity", 1)),
                         "deliveryMethod", "PICKUP", "paymentMethod", "PIX"),
                 status().isCreated());
@@ -145,20 +160,19 @@ class StoreFlowIntegrationTest {
         assertThat(after.get("variants").get(1).get("stock").asInt()).isEqualTo(4);
 
         JsonNode inbox = call(owner, get("/api/notifications"), null, status().isOk());
-        List<String> types = inbox.get("items").findValuesAsText("type");
-        assertThat(types).contains("NEW_ORDER", "OUT_OF_STOCK");
+        assertThat(inbox.get("items").findValuesAsText("type")).contains("NEW_ORDER", "OUT_OF_STOCK");
 
         // sem estoque: outro pedido do 37 não passa
         String bia = register("Bia Cliente");
-        call(bia, post("/api/orders"), Map.of("items", List.of(Map.of("variantId", v37, "quantity", 1)),
+        call(bia, post(shop.orders()), Map.of("items", List.of(Map.of("variantId", v37, "quantity", 1)),
                 "deliveryMethod", "PICKUP", "paymentMethod", "CASH"), status().isUnprocessableEntity());
         // Bia pede para ser avisada quando o produto voltar
         call(bia, post("/api/me/watches/" + productId), null, status().isNoContent());
 
         // outro cliente não vê o pedido da Ana; cliente não entra na gestão
-        call(bia, get("/api/orders/" + orderId), null, status().isNotFound());
+        call(bia, get(shop.orders() + "/" + orderId), null, status().isNotFound());
         call(bia, get("/api/store/orders"), null, status().isForbidden());
-        call(null, get("/api/orders"), null, status().isUnauthorized());
+        call(null, get(shop.orders()), null, status().isUnauthorized());
 
         // equipe confirma e deixa pronto: a Ana recebe os avisos
         call(owner, post("/api/store/orders/" + orderId + "/status"), Map.of("status", "CONFIRMED"), status().isOk());
@@ -173,10 +187,11 @@ class StoreFlowIntegrationTest {
                 .anyMatch(t -> t.contains("pronto para retirar"))
                 .contains("Pagamento confirmado");
         assertThat(anaInbox.get("items").findValuesAsText("type")).doesNotContain("NEW_ORDER");
+        assertThat(anaInbox.get("items").findValuesAsText("storeSlug")).containsOnly(shop.slug());
 
         // o pedido pronto não pode mais ser cancelado pelo app
-        call(ana, post("/api/orders/" + orderId + "/cancel"), Map.of(), status().isUnprocessableEntity());
-        JsonNode timeline = call(ana, get("/api/orders/" + orderId), null, status().isOk()).get("events");
+        call(ana, post(shop.orders() + "/" + orderId + "/cancel"), Map.of(), status().isUnprocessableEntity());
+        JsonNode timeline = call(ana, get(shop.orders() + "/" + orderId), null, status().isOk()).get("events");
         assertThat(timeline.findValuesAsText("status")).containsExactly("PENDING", "CONFIRMED", "READY");
 
         // loja cancela: peças voltam; o 37 volta ao estoque e a Bia é avisada
@@ -188,6 +203,11 @@ class StoreFlowIntegrationTest {
                 .contains("BACK_IN_STOCK");
         assertThat(call(bia, get("/api/me/watches"), null, status().isOk())).isEmpty();
 
+        // histórico do estoque paginado
+        JsonNode history = call(owner, get("/api/store/variants/" + v37 + "/stock?size=2"), null, status().isOk());
+        assertThat(history.get("items")).hasSize(2);
+        assertThat(history.get("hasMore").asBoolean()).isTrue();
+
         // fila de push: avisos da equipe e da cliente entregues e confirmados
         pushWorker.drain();
         Integer sent = jdbc.queryForObject("select count(*) from push_outbox where status = 'SENT'", Integer.class);
@@ -198,38 +218,105 @@ class StoreFlowIntegrationTest {
         assertThat(jdbc.queryForObject("select status from push_outbox where public_id = ?", String.class, one.get("public_id")))
                 .isEqualTo("RECEIVED");
 
+        // resumo calculado no banco (o pedido cancelado não conta)
         JsonNode report = call(owner, get("/api/store/reports/summary"), null, status().isOk());
-        assertThat(report.has("revenue")).isTrue();
+        assertThat(report.get("orders").asLong()).isZero();
+        assertThat(report.get("byStatus").get("CANCELED").asLong()).isEqualTo(1);
         call(ana, get("/api/store/reports/summary"), null, status().isForbidden());
+
+        // clientes da loja: só quem comprou aqui
+        JsonNode customers = call(owner, get("/api/store/customers"), null, status().isOk());
+        assertThat(customers.get("items").findValuesAsText("name")).containsExactly("Ana Cliente");
+    }
+
+    @Test
+    void storesNeverSeeEachOthersData() throws Exception {
+        Shop a = openStore("Loja A");
+        Shop b = openStore("Loja B");
+        JsonNode product = call(a.owner(), post("/api/store/products"), product("Colar Pérola", "BIJUTERIAS", null, 80,
+                List.of(variant(null, "Único", "", 3))), status().isCreated());
+        long productId = product.get("id").asLong();
+        long variantId = product.get("variants").get(0).get("id").asLong();
+        String cli = register("Cliente das duas");
+        long orderId = id(call(cli, post(a.orders()), Map.of("items", List.of(Map.of("variantId", variantId, "quantity", 1)),
+                "deliveryMethod", "PICKUP", "paymentMethod", "PIX"), status().isCreated()));
+
+        // a equipe da B não acha produto, pedido, estoque nem avisos da A
+        call(b.owner(), get("/api/store/products/" + productId), null, status().isNotFound());
+        call(b.owner(), put("/api/store/products/" + productId), product("Roubado", "BIJUTERIAS", null, 1,
+                List.of(variant(null, "Único", "", 0))), status().isNotFound());
+        call(b.owner(), get("/api/store/orders/" + orderId), null, status().isNotFound());
+        call(b.owner(), post("/api/store/orders/" + orderId + "/status"), Map.of("status", "CANCELED"), status().isNotFound());
+        call(b.owner(), post("/api/store/variants/" + variantId + "/stock"), Map.of("type", "IN", "quantity", 5),
+                status().isNotFound());
+        assertThat(call(b.owner(), get("/api/store/products"), null, status().isOk()).get("total").asLong()).isZero();
+        assertThat(call(b.owner(), get("/api/store/orders?open=false"), null, status().isOk()).get("total").asLong()).isZero();
+        assertThat(call(b.owner(), get("/api/notifications"), null, status().isOk()).get("items")).isEmpty();
+        assertThat(call(b.owner(), get("/api/store/customers"), null, status().isOk()).get("items")).isEmpty();
+
+        // na vitrine da B o produto da A não existe, e não dá para comprar a peça da A pela B
+        call(null, get(b.base() + "/products/" + productId), null, status().isNotFound());
+        call(cli, post(b.orders()), Map.of("items", List.of(Map.of("variantId", variantId, "quantity", 1)),
+                "deliveryMethod", "PICKUP", "paymentMethod", "PIX"), status().isUnprocessableEntity());
+        // pedido da A não aparece pela B
+        call(cli, get(b.orders() + "/" + orderId), null, status().isNotFound());
+
+        // bloqueio da B vale só na B
+        long cliId = jdbc.queryForObject("select customer_id from orders where id = ?", Long.class, orderId);
+        call(b.owner(), post("/api/store/customers/" + cliId + "/block"), Map.of("reason", "teste"), status().isNoContent());
+        JsonNode bProduct = call(b.owner(), post("/api/store/products"), product("Brinco", "BIJUTERIAS", null, 20,
+                List.of(variant(null, "Único", "", 3))), status().isCreated());
+        call(cli, post(b.orders()), Map.of("items", List.of(Map.of("variantId", bProduct.get("variants").get(0).get("id").asLong(),
+                "quantity", 1)), "deliveryMethod", "PICKUP", "paymentMethod", "PIX"), status().isForbidden());
+        call(cli, post(a.orders()), Map.of("items", List.of(Map.of("variantId", variantId, "quantity", 1)),
+                "deliveryMethod", "PICKUP", "paymentMethod", "PIX"), status().isCreated());
+
+        // admin da plataforma bloqueia a A: some da vitrine e a equipe dela cai na hora
+        String admin = login("admin@plataforma.test", "SenhaDoAdmin123");
+        long aId = jdbc.queryForObject("select id from store where slug = ?", Long.class, a.slug());
+        call(admin, post("/api/platform/stores/" + aId + "/block"), Map.of("reason", "Fraude"), status().isOk());
+        call(null, get(a.base()), null, status().isNotFound());
+        assertThat(call(a.owner(), get("/api/store/orders"), null, status().isForbidden()).get("code").asText())
+                .isEqualTo("ACCOUNT_BLOCKED");
+        call(b.owner(), get("/api/store/orders"), null, status().isOk());
+        call(a.owner(), get("/api/platform/stores"), null, status().isForbidden());
+        call(admin, post("/api/platform/stores/" + aId + "/unblock"), null, status().isOk());
+        call(null, get(a.base()), null, status().isOk());
     }
 
     @Test
     void customerCancelsPendingOrderAndStockReturns() throws Exception {
-        String owner = login("dono@loja.test", "SenhaDoDono123");
-        call(owner, post("/api/me/push-token"), Map.of("token", "cel-dono2-" + UUID.randomUUID()), status().isNoContent());
-        JsonNode product = call(owner, post("/api/store/products"), product("Brinco Argola", "BIJUTERIAS", null, 39.9,
+        Shop shop = openStore("Bijus da Carla");
+        call(shop.owner(), post("/api/me/push-token"), Map.of("token", "cel-dono2-" + UUID.randomUUID()), status().isNoContent());
+        JsonNode product = call(shop.owner(), post("/api/store/products"), product("Brinco Argola", "BIJUTERIAS", null, 39.9,
                 List.of(variant(null, "Único", "Dourado", 3))), status().isCreated());
         long variant = product.get("variants").get(0).get("id").asLong();
 
         String cli = register("Carla Cliente");
-        long orderId = id(call(cli, post("/api/orders"), Map.of("items", List.of(Map.of("variantId", variant, "quantity", 3)),
+        long orderId = id(call(cli, post(shop.orders()), Map.of("items", List.of(Map.of("variantId", variant, "quantity", 3)),
                 "deliveryMethod", "DELIVERY", "paymentMethod", "CARD", "address", "Rua das Flores, 123 - Centro"),
                 status().isCreated()));
-        call(cli, post("/api/orders/" + orderId + "/cancel"), Map.of("reason", "Comprei errado"), status().isOk());
+        call(cli, post(shop.orders() + "/" + orderId + "/cancel"), Map.of("reason", "Comprei errado"), status().isOk());
 
-        JsonNode p = call(owner, get("/api/store/products/" + product.get("id").asLong()), null, status().isOk());
+        JsonNode p = call(shop.owner(), get("/api/store/products/" + product.get("id").asLong()), null, status().isOk());
         assertThat(p.get("variants").get(0).get("stock").asInt()).isEqualTo(3);
-        assertThat(call(owner, get("/api/notifications"), null, status().isOk()).get("items").findValuesAsText("title"))
+        assertThat(call(shop.owner(), get("/api/notifications"), null, status().isOk()).get("items").findValuesAsText("title"))
                 .anyMatch(t -> t.contains("cancelado pelo cliente"));
 
         // entrega sem endereço não passa
-        call(cli, post("/api/orders"), Map.of("items", List.of(Map.of("variantId", variant, "quantity", 1)),
+        call(cli, post(shop.orders()), Map.of("items", List.of(Map.of("variantId", variant, "quantity", 1)),
                 "deliveryMethod", "DELIVERY", "paymentMethod", "CARD"), status().isUnprocessableEntity());
+
+        // sino paginado
+        JsonNode page = call(shop.owner(), get("/api/notifications?size=1"), null, status().isOk());
+        assertThat(page.get("items")).hasSize(1);
+        assertThat(page.get("hasMore").asBoolean()).isTrue();
     }
 
     @Test
-    void securityBlocksRevokesAndLocks() throws Exception {
-        String owner = login("dono@loja.test", "SenhaDoDono123");
+    void securityBlocksRevokesLocksAndAudits() throws Exception {
+        Shop shop = openStore("Segura Moda");
+        String owner = shop.owner();
         String email = "seg-" + UUID.randomUUID() + "@cliente.test";
         JsonNode reg = call(null, post("/api/auth/register"),
                 Map.of("name", "Davi", "email", email, "password", "Senha1234"), status().isCreated());
@@ -251,15 +338,15 @@ class StoreFlowIntegrationTest {
         call(fresh, post("/api/me/logout-all"), null, status().isNoContent());
         call(fresh, get("/api/me"), null, status().isUnauthorized());
 
-        // bloqueio pela loja vale na hora, inclusive no login
+        // bloqueio geral (admin da plataforma) vale na hora, inclusive no login
         String again = login(email, "NovaSenha99");
-        call(owner, post("/api/store/customers/" + userId + "/block"), Map.of("reason", "Pedidos falsos"), status().isOk());
-        assertThat(call(again, get("/api/me"), null, status().isForbidden()).get("code").asText())
-                .isEqualTo("ACCOUNT_BLOCKED");
+        String admin = login("admin@plataforma.test", "SenhaDoAdmin123");
+        call(admin, post("/api/platform/users/" + userId + "/block"), Map.of("reason", "Pedidos falsos"), status().isOk());
+        assertThat(call(again, get("/api/me"), null, status().isForbidden()).get("code").asText()).isEqualTo("ACCOUNT_BLOCKED");
         mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(json.writeValueAsString(Map.of("email", email, "password", "NovaSenha99"))))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACCOUNT_BLOCKED"));
-        call(owner, post("/api/store/customers/" + userId + "/unblock"), null, status().isOk());
+        call(admin, post("/api/platform/users/" + userId + "/unblock"), null, status().isOk());
 
         // senhas erradas seguidas travam o login daquele e-mail
         for (int i = 0; i < 5; i++) {
@@ -267,18 +354,50 @@ class StoreFlowIntegrationTest {
         }
         call(null, post("/api/auth/login"), Map.of("email", email, "password", "NovaSenha99"), status().isTooManyRequests());
 
-        // funcionário não mexe em promoções nem na equipe
-        call(owner, post("/api/store/users"), Map.of("name", "Fernanda", "email", "func-" + UUID.randomUUID() + "@loja.test",
+        // a própria pessoa vê os acessos dela
+        JsonNode mine = call(admin, get("/api/me/security-events"), null, status().isOk());
+        assertThat(mine.get("items").findValuesAsText("type")).contains("LOGIN");
+        assertThat(jdbc.queryForObject("select count(*) from security_event where user_id = ? and type = 'LOGIN_LOCKED'",
+                Integer.class, userId)).isEqualTo(1);
+
+        // funcionário não mexe em promoções, equipe nem auditoria
+        String staffEmail = "func-" + UUID.randomUUID() + "@loja.test";
+        call(owner, post("/api/store/users"), Map.of("name", "Fernanda", "email", staffEmail,
                 "password", "Funcionaria1", "role", "STAFF"), status().isCreated());
-        String staffEmail = jdbc.queryForObject("select email from app_user where role = 'STAFF' order by id desc limit 1",
-                String.class);
         String staff = login(staffEmail, "Funcionaria1");
         call(staff, get("/api/store/orders"), null, status().isOk());
         call(staff, get("/api/store/promotions"), null, status().isForbidden());
         call(staff, get("/api/store/users"), null, status().isForbidden());
+        call(staff, get("/api/store/audit"), null, status().isForbidden());
+        JsonNode audit = call(owner, get("/api/store/audit"), null, status().isOk());
+        assertThat(audit.get("items").findValuesAsText("type")).contains("STORE_CREATED", "STAFF_CREATED", "LOGIN");
 
         // token adulterado não entra
         call(owner.substring(0, owner.length() - 3) + "abc", get("/api/me"), null, status().isUnauthorized());
+    }
+
+    @Test
+    void twoFactorProtectsTheLogin() throws Exception {
+        Shop shop = openStore("Loja Dupla");
+        String email = jdbc.queryForObject("select u.email from app_user u join store s on s.id = u.store_id where s.slug = ?",
+                String.class, shop.slug());
+        JsonNode setup = call(shop.owner(), post("/api/me/2fa/setup"), null, status().isOk());
+        String secret = setup.get("secret").asText();
+        assertThat(setup.get("otpauthUri").asText()).startsWith("otpauth://totp/");
+        call(shop.owner(), post("/api/me/2fa/enable"), Map.of("code", "000000"), status().isUnprocessableEntity());
+        call(shop.owner(), post("/api/me/2fa/enable"), Map.of("code", code(secret)), status().isNoContent());
+        // segredo fica cifrado no banco
+        assertThat(jdbc.queryForObject("select totp_secret from app_user where email = ?", String.class, email)).doesNotContain(secret);
+
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("email", email, "password", "SenhaDona123"))))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("TOTP_REQUIRED"));
+        call(null, post("/api/auth/login"), Map.of("email", email, "password", "SenhaDona123", "code", "123456"),
+                status().isUnauthorized());
+        JsonNode ok = call(null, post("/api/auth/login"), Map.of("email", email, "password", "SenhaDona123", "code", code(secret)),
+                status().isOk());
+        assertThat(ok.get("user").get("twoFactorEnabled").asBoolean()).isTrue();
+        assertThat(ok.get("user").get("storeSlug").asText()).isEqualTo(shop.slug());
     }
 
     @Test
@@ -287,9 +406,26 @@ class StoreFlowIntegrationTest {
                 status().isNoContent());
         call(null, post("/api/auth/reset-password"), Map.of("email", "ninguem@x.test", "code", "ABCDEFGH",
                 "password", "Senha12345"), status().isUnprocessableEntity());
+        // endereço de loja repetido não passa
+        Shop shop = openStore("Repetida");
+        call(null, post("/api/auth/register-store"), Map.of("storeName", "Outra", "slug", shop.slug(), "ownerName", "X",
+                "email", "x-" + UUID.randomUUID() + "@x.test", "password", "SenhaDona123"), status().isUnprocessableEntity());
     }
 
     // --- ajudantes ---
+
+    private Shop openStore(String name) throws Exception {
+        String slug = "loja-" + UUID.randomUUID().toString().substring(0, 8);
+        JsonNode res = call(null, post("/api/auth/register-store"), Map.of("storeName", name, "slug", slug,
+                "ownerName", "Dona " + name, "email", "dona-" + slug + "@loja.test", "password", "SenhaDona123"),
+                status().isCreated());
+        rateLimiter.reset();
+        return new Shop(slug, res.get("token").asText());
+    }
+
+    private String code(String secret) {
+        return Totp.code(secret, clock.instant().getEpochSecond() / 30);
+    }
 
     private String login(String email, String password) throws Exception {
         return call(null, post("/api/auth/login"), Map.of("email", email, "password", password), status().isOk())
@@ -305,7 +441,7 @@ class StoreFlowIntegrationTest {
     private static Map<String, Object> product(String name, String department, Long categoryId, double price,
                                                List<Map<String, Object>> variants) {
         Map<String, Object> m = new HashMap<>();
-        m.put("name", name + " " + UUID.randomUUID().toString().substring(0, 6));
+        m.put("name", name);
         m.put("department", department);
         m.put("categoryId", categoryId);
         m.put("price", price);

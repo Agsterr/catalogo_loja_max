@@ -40,15 +40,16 @@ public class CatalogController {
         this.stock = stock;
     }
 
-    // --- vitrine (pública: dá para olhar sem conta) ---
+    // --- vitrine da loja {slug} (pública: dá para olhar sem conta) ---
 
-    @GetMapping("/api/public/categories")
-    public List<CategoryResponse> publicCategories() {
+    @GetMapping("/api/public/stores/{slug}/categories")
+    public List<CategoryResponse> publicCategories(@PathVariable String slug) {
         return products.categories(false);
     }
 
-    @GetMapping("/api/public/products")
-    public PageResponse<ProductCard> publicProducts(@RequestParam(required = false) Department department,
+    @GetMapping("/api/public/stores/{slug}/products")
+    public PageResponse<ProductCard> publicProducts(@PathVariable String slug,
+                                                    @RequestParam(required = false) Department department,
                                                     @RequestParam(required = false) Long categoryId,
                                                     @RequestParam(required = false) String q,
                                                     @RequestParam(defaultValue = "false") boolean onSale,
@@ -60,8 +61,8 @@ public class CatalogController {
                 page, size);
     }
 
-    @GetMapping("/api/public/products/{id}")
-    public ProductResponse publicProduct(@PathVariable Long id) {
+    @GetMapping("/api/public/stores/{slug}/products/{id}")
+    public ProductResponse publicProduct(@PathVariable String slug, @PathVariable Long id) {
         return products.get(id, false);
     }
 
@@ -112,8 +113,8 @@ public class CatalogController {
     }
 
     @DeleteMapping("/api/store/products/{id}")
-    public DeleteResponse delete(@PathVariable Long id) {
-        return new DeleteResponse(products.delete(id));
+    public DeleteResponse delete(@AuthenticationPrincipal Jwt jwt, @PathVariable Long id) {
+        return new DeleteResponse(products.delete(id, Long.valueOf(jwt.getSubject())));
     }
 
     @PostMapping("/api/store/variants/{variantId}/stock")
@@ -123,8 +124,9 @@ public class CatalogController {
     }
 
     @GetMapping("/api/store/variants/{variantId}/stock")
-    public List<MovementResponse> history(@PathVariable Long variantId) {
-        return stock.history(variantId);
+    public PageResponse<MovementResponse> history(@PathVariable Long variantId, @RequestParam(required = false) Integer page,
+                                                  @RequestParam(required = false) Integer size) {
+        return stock.history(variantId, page, size);
     }
 
     @GetMapping("/api/store/stock/low")

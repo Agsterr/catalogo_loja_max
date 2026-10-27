@@ -12,7 +12,10 @@ import jakarta.persistence.Id;
 import lombok.Getter;
 import lombok.Setter;
 
-/** Aviso do sino. {@code userId} nulo = toda a equipe; preenchido = só aquele usuário. */
+/**
+ * Aviso do sino. Sempre de uma loja ({@code storeId}); {@code userId} nulo = toda a equipe daquela loja,
+ * preenchido = só aquele usuário (o cliente vê os avisos de todas as lojas em que comprou).
+ */
 @Getter
 @Setter
 @Entity
@@ -38,6 +41,9 @@ public class Notification {
 
     @Column(nullable = false)
     private String message;
+
+    @Column(nullable = false)
+    private Long storeId;
 
     private Long orderId;
 

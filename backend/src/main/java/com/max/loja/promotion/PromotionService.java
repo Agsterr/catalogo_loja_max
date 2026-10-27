@@ -8,6 +8,7 @@ import com.max.loja.catalog.CategoryRepository;
 import com.max.loja.catalog.Department;
 import com.max.loja.catalog.ProductRepository;
 import com.max.loja.event.StoreEvents;
+import com.max.loja.security.AuditService;
 import com.max.loja.shared.BusinessException;
 import com.max.loja.shared.NotFoundException;
 import jakarta.validation.constraints.Max;
@@ -39,9 +40,11 @@ public class PromotionService {
     private final ProductRepository products;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final AuditService audit;
 
     public PromotionService(PromotionRepository promotions, CategoryRepository categories, ProductRepository products,
-                            ApplicationEventPublisher events, Clock clock) {
+                            ApplicationEventPublisher events, Clock clock, AuditService audit) {
+        this.audit = audit;
         this.promotions = promotions;
         this.categories = categories;
         this.products = products;
@@ -61,7 +64,7 @@ public class PromotionService {
     }
 
     @Transactional
-    public PromotionResponse save(Long id, PromotionRequest req) {
+    public PromotionResponse save(Long id, PromotionRequest req, Long actorId) {
         if (!req.endsAt().isAfter(req.startsAt())) {
             throw new BusinessException("O fim precisa ser depois do início");
         }
@@ -91,6 +94,7 @@ public class PromotionService {
         p.setActive(req.active());
         p.setNotifyCustomers(req.notifyCustomers());
         promotions.save(p);
+        audit.record(AuditService.PROMOTION_SAVED, actorId, p.getTitle() + " (" + p.getDiscountPercent() + "%)");
         announceStarted();
         return response(p);
     }

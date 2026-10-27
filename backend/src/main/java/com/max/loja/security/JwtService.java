@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class JwtService {
 
+    static final String TENANT_CLAIM = "tenant";
     static final String ROLE_CLAIM = "role";
     static final String VERSION_CLAIM = "ver";
     static final String ISSUER = "loja-max";
@@ -27,16 +28,18 @@ public class JwtService {
 
     public String issue(AppUser user) {
         Instant now = Instant.now();
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
                 .issuer(ISSUER)
                 .subject(user.getId().toString())
                 .issuedAt(now)
                 .expiresAt(now.plus(props.ttl()))
                 .claim(ROLE_CLAIM, user.getRole().name())
                 .claim(VERSION_CLAIM, user.getTokenVersion())
-                .claim("name", user.getName())
-                .build();
+                .claim("name", user.getName());
+        if (user.getStoreId() != null) {
+            claims.claim(TENANT_CLAIM, user.getStoreId());
+        }
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
-        return encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+        return encoder.encode(JwtEncoderParameters.from(header, claims.build())).getTokenValue();
     }
 }

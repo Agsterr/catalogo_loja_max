@@ -30,27 +30,28 @@ public class OrderController {
         this.service = service;
     }
 
-    // --- cliente (só os pedidos dele) ---
+    // --- cliente (só os pedidos dele, na loja do endereço {slug}) ---
 
-    @PostMapping("/api/orders")
+    @PostMapping("/api/stores/{slug}/orders")
     @ResponseStatus(HttpStatus.CREATED)
-    public OrderResponse place(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody PlaceOrderRequest req) {
+    public OrderResponse place(@AuthenticationPrincipal Jwt jwt, @PathVariable String slug, @Valid @RequestBody PlaceOrderRequest req) {
         return service.place(id(jwt), req);
     }
 
-    @GetMapping("/api/orders")
-    public PageResponse<OrderSummary> mine(@AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) Integer page,
+    @GetMapping("/api/stores/{slug}/orders")
+    public PageResponse<OrderSummary> mine(@AuthenticationPrincipal Jwt jwt, @PathVariable String slug,
+                                           @RequestParam(required = false) Integer page,
                                            @RequestParam(required = false) Integer size) {
         return service.myOrders(id(jwt), page, size);
     }
 
-    @GetMapping("/api/orders/{orderId}")
-    public OrderResponse myOrder(@AuthenticationPrincipal Jwt jwt, @PathVariable Long orderId) {
+    @GetMapping("/api/stores/{slug}/orders/{orderId}")
+    public OrderResponse myOrder(@AuthenticationPrincipal Jwt jwt, @PathVariable String slug, @PathVariable Long orderId) {
         return service.myOrder(id(jwt), orderId);
     }
 
-    @PostMapping("/api/orders/{orderId}/cancel")
-    public OrderResponse cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable Long orderId,
+    @PostMapping("/api/stores/{slug}/orders/{orderId}/cancel")
+    public OrderResponse cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable String slug, @PathVariable Long orderId,
                                 @Valid @RequestBody(required = false) CancelRequest req) {
         return service.cancelByCustomer(id(jwt), orderId, req == null ? null : req.reason());
     }

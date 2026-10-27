@@ -5,14 +5,12 @@ import java.time.LocalDateTime;
 import com.max.loja.catalog.Category;
 import com.max.loja.catalog.Department;
 import com.max.loja.catalog.Product;
+import com.max.loja.shared.TenantEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import jakarta.persistence.ManyToOne;
 import lombok.Getter;
 import lombok.Setter;
@@ -24,11 +22,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-public class Promotion {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class Promotion extends TenantEntity {
 
     @Column(nullable = false)
     private String title;

@@ -55,11 +55,13 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/public/**", "/api/push/ack", "/actuator/health").permitAll()
                         .requestMatchers("/api/me/**", "/api/me", "/api/notifications/**").authenticated()
-                        // Compras: só clientes
-                        .requestMatchers("/api/orders/**").hasRole("CUSTOMER")
+                        // Administrador da plataforma: lojas e usuários
+                        .requestMatchers("/api/platform/**").hasRole("PLATFORM_ADMIN")
+                        // Compras numa loja (/api/stores/{slug}/...): só clientes
+                        .requestMatchers("/api/stores/**").hasRole("CUSTOMER")
                         // Gestão: relatórios, equipe, promoções e dados da loja só o dono
-                        .requestMatchers("/api/store/reports/**", "/api/store/users/**", "/api/store/promotions/**")
-                        .hasRole("OWNER")
+                        .requestMatchers("/api/store/reports/**", "/api/store/users/**", "/api/store/promotions/**",
+                                "/api/store/audit/**").hasRole("OWNER")
                         .requestMatchers(HttpMethod.PUT, "/api/store/settings").hasRole("OWNER")
                         .requestMatchers(HttpMethod.POST, "/api/store/customers/*/block", "/api/store/customers/*/unblock")
                         .hasRole("OWNER")
@@ -75,6 +77,7 @@ public class SecurityConfig {
                         .accessDeniedHandler((req, res, ex) -> problem(res, json, HttpStatus.FORBIDDEN,
                                 "Você não tem permissão para isso.")))
                 .addFilterAfter(new AccountStatusFilter(statuses, json), BearerTokenAuthenticationFilter.class)
+                .addFilterAfter(new TenantFilter(), AccountStatusFilter.class)
                 .build();
     }
 

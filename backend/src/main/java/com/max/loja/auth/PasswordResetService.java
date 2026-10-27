@@ -11,6 +11,7 @@ import java.util.List;
 
 import com.max.loja.mail.MailSender;
 import com.max.loja.security.AccountStatusService;
+import com.max.loja.security.AuditService;
 import com.max.loja.shared.BusinessException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,12 +39,14 @@ public class PasswordResetService {
     private final MailSender mail;
     private final Clock clock;
     private final AccountStatusService statuses;
+    private final AuditService audit;
     private final SecureRandom random = new SecureRandom();
 
     public PasswordResetService(AppUserRepository users, PasswordEncoder passwordEncoder, JdbcTemplate jdbc,
                                 MailSender mail, Clock clock,
-                                AccountStatusService statuses) {
+                                AccountStatusService statuses, AuditService audit) {
         this.statuses = statuses;
+        this.audit = audit;
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jdbc = jdbc;
@@ -56,8 +59,8 @@ public class PasswordResetService {
         AppUser user = users.findByEmailIgnoreCase(email.trim())
                 .filter(AppUser::isActive)
                 .filter(u -> !u.isBlocked())
-                // a senha do dono vem do servidor (STORE_OWNER_PASSWORD)
-                .filter(u -> u.getRole() != Role.OWNER)
+                // a senha do admin da plataforma só muda no servidor (PLATFORM_ADMIN_PASSWORD)
+                .filter(u -> u.getRole() != Role.PLATFORM_ADMIN)
                 .orElse(null);
         if (user == null) {
             return;
@@ -104,6 +107,7 @@ public class PasswordResetService {
         user.setFailedLogins(0);
         user.setLockedUntil(null);
         statuses.evict(user.getId());
+        audit.recordFor(user.getStoreId(), AuditService.PASSWORD_RESET, user.getId(), "pelo código do e-mail");
         jdbc.update("update password_reset set used_at = ? where id = ?", LocalDateTime.now(clock), row[0]);
         jdbc.update("delete from password_reset where user_id = ? and used_at is null", user.getId());
     }

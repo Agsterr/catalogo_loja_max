@@ -1,7 +1,6 @@
 package com.max.loja.order;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -30,9 +29,6 @@ public interface OrderRepository extends JpaRepository<CustomerOrder, Long>, Jpa
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from CustomerOrder o where o.id = :id")
     Optional<CustomerOrder> lock(@Param("id") Long id);
-
-    @Query("select o from CustomerOrder o where o.createdAt >= :from and o.createdAt < :to and o.status <> com.max.loja.order.OrderStatus.CANCELED")
-    List<CustomerOrder> findValidBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
     long countByStatus(OrderStatus status);
 }
