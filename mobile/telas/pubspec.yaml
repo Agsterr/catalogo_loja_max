@@ -1,0 +1,29 @@
+name: loja_telas
+description: Gera as imagens das telas dos dois apps (Loja Max e Loja Max Lojista) com dados de exemplo.
+publish_to: none
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  loja_core:
+    path: ../core
+  loja_cliente:
+    path: ../cliente
+  loja_lojista:
+    path: ../lojista
+  http: ^1.6.0
+  intl: ^0.20.2
+  shared_preferences: ^2.5.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

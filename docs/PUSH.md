@@ -24,16 +24,18 @@ Canais do Android: `pedidos` (pedidos e estoque) e `promocoes` (promoções e "c
 
 ## Configurar uma vez
 1. https://console.firebase.google.com → **Criar projeto**.
-2. **Adicionar app → Android** com o pacote `io.github.agsterr.lojamax`. Do `google-services.json` copie
-   (não precisa ir para o repositório):
-   | Secret do GitHub / `--dart-define` | Campo |
-   |---|---|
-   | `FIREBASE_API_KEY` | `client[0].api_key[0].current_key` |
-   | `FIREBASE_APP_ID` | `client[0].client_info.mobilesdk_app_id` |
-   | `FIREBASE_SENDER_ID` | `project_info.project_number` |
-   | `FIREBASE_PROJECT_ID` | `project_info.project_id` |
+2. **Adicionar app → Android** duas vezes: `io.github.agsterr.lojamax` (Loja Max, clientes) e
+   `io.github.agsterr.lojamax.lojista` (Loja Max Lojista). Do `google-services.json` de cada um copie (não precisa ir
+   para o repositório):
+   | Secret do GitHub | Campo | `--dart-define` |
+   |---|---|---|
+   | `FIREBASE_API_KEY` | `client[0].api_key[0].current_key` | `FIREBASE_API_KEY` |
+   | `FIREBASE_APP_ID_CLIENTE` | `client[0].client_info.mobilesdk_app_id` (app do cliente) | `FIREBASE_APP_ID` no build do cliente |
+   | `FIREBASE_APP_ID_LOJISTA` | `client[0].client_info.mobilesdk_app_id` (app do lojista) | `FIREBASE_APP_ID` no build do lojista |
+   | `FIREBASE_SENDER_ID` | `project_info.project_number` | `FIREBASE_SENDER_ID` |
+   | `FIREBASE_PROJECT_ID` | `project_info.project_id` | `FIREBASE_PROJECT_ID` |
 3. Firebase → ⚙️ *Configurações do projeto → Contas de serviço* → **Gerar nova chave privada** (JSON). No servidor,
    no `.env` (nunca no repositório): `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=` + saída de `base64 -w0 arquivo.json`.
-4. Build do app com os quatro `--dart-define=FIREBASE_*` (o CI já passa os secrets).
+4. Build de cada app com os quatro `--dart-define=FIREBASE_*` (o CI já passa os secrets certos para cada um).
 
 iPhone: exige chave APNs da Apple (conta de desenvolvedor) — ainda não configurado; no iOS ficam o sino e os avisos locais.

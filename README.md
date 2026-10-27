@@ -8,17 +8,25 @@ novas tentativas e confirmação), fotos no **Cloudflare R2** e segurança refor
 | | |
 |---|---|
 | **API** (`backend/`) | Java 21 · Spring Boot 3.5 · Spring Security (JWT HS256) · JPA/Hibernate (multi-tenant) · Flyway · PostgreSQL |
-| **App** (`mobile/`) | Flutter · um app só: vitrine para clientes, gestão para a equipe da loja, painel do admin da plataforma |
+| **Apps** (`mobile/`) | Flutter · **Loja Max** (cliente) e **Loja Max Lojista** (gestão da loja e admin da plataforma), com pacote comum — veja [mobile/](mobile/README.md) |
 
 ## Telas
 
+**Loja Max (cliente)**
+
 | | | |
 |---|---|---|
-| ![Escolher loja](docs/telas/01-escolher-loja.png) | ![Vitrine](docs/telas/02-vitrine.png) | ![Produto](docs/telas/03-produto.png) |
-| ![Carrinho](docs/telas/04-carrinho.png) | ![Pedido](docs/telas/05-pedido-cliente.png) | ![Gestão: pedidos](docs/telas/07-gestao-pedidos.png) |
-| ![Gestão: pedido](docs/telas/08-gestao-pedido.png) | ![Gestão: produto](docs/telas/09-gestao-produto.png) | ![Resumo de vendas](docs/telas/10-resumo-vendas.png) |
+| ![Escolher loja](docs/telas/cliente/01-escolher-loja.png) | ![Vitrine](docs/telas/cliente/02-vitrine.png) | ![Produto](docs/telas/cliente/03-produto.png) |
+| ![Carrinho](docs/telas/cliente/04-carrinho.png) | ![Pedido](docs/telas/cliente/05-pedido.png) | ![Modo escuro](docs/telas/cliente/07-vitrine-escuro.png) |
 
-Geradas pelo próprio Flutter com dados de exemplo: `cd mobile && flutter test screenshots/telas_test.dart`
+**Loja Max Lojista**
+
+| | | |
+|---|---|---|
+| ![Entrar](docs/telas/lojista/01-entrar.png) | ![Pedidos](docs/telas/lojista/02-pedidos.png) | ![Pedido](docs/telas/lojista/03-pedido.png) |
+| ![Produto](docs/telas/lojista/04-produto.png) | ![Promoções](docs/telas/lojista/05-promocoes.png) | ![Resumo de vendas](docs/telas/lojista/06-resumo-vendas.png) |
+
+Geradas pelo próprio Flutter com dados de exemplo: `cd mobile/telas && flutter test telas_test.dart`
 (as fotos dos produtos ali são ilustrações; no app real são as fotos que a loja envia).
 
 ## Funcionalidades
@@ -32,15 +40,15 @@ Geradas pelo próprio Flutter com dados de exemplo: `cd mobile && flutter test s
 - Avisos de todas as lojas em que comprou; promoções das lojas que segue.
 - Conta: dados, senha, **verificação em duas etapas**, **acessos da conta**, sair de todos os aparelhos, excluir conta.
 
-**Loja (mesmo app, login da equipe)**
-- Lojista abre a loja pelo app ("Tenho uma loja") e vira o dono; cadastra funcionários.
+**Lojista (app Loja Max Lojista)**
+- Lojista abre a loja pelo app ("Abrir minha loja") e vira o dono; cadastra funcionários, que entram pelo mesmo app.
 - Pedidos em aberto/por status, avançar status, marcar pago, WhatsApp do cliente.
 - Produtos com tamanhos/cores, **fotos pela câmera/galeria** (R2), entrada/contagem/perda de estoque com histórico paginado.
-- Promoções por período com **push para os clientes quando começa**.
+- Promoções por período — loja inteira, departamento, categoria ou **um produto só** — com **push para os clientes quando começa**.
 - Dono: resumo de vendas (faturamento, recebido, ticket médio, clientes novos, descontos, gráfico por dia, mais vendidos,
   estoque baixo), equipe, dados da loja, **bloqueio de cliente só na loja dele** e **auditoria**.
 
-**Administrador da plataforma**: lista lojas e contas, bloqueia/desbloqueia (vale na hora) e desliga a verificação em
+**Administrador da plataforma** (entra pelo app do lojista): lista lojas e contas, bloqueia/desbloqueia (vale na hora) e desliga a verificação em
 duas etapas de quem perdeu o celular.
 
 ## Multi-loja (multi-tenant)
@@ -72,16 +80,16 @@ push na fila (`push_outbox`). O worker entrega pelo Firebase (FCM HTTP v1) com n
 ```bash
 docker compose up --build            # banco + API em http://localhost:8080 (cria o admin da plataforma)
 
-cd mobile && flutter pub get && flutter run --dart-define=API_URL=http://10.0.2.2:8080
+cd mobile/cliente && flutter pub get && flutter run --dart-define=API_URL=http://10.0.2.2:8080   # ou mobile/lojista
 ```
 
 ### Testes
 ```bash
 createdb -O loja loja_test
 cd backend && mvn test           # TEST_DB_URL, DB_USER e DB_PASSWORD são configuráveis
-cd mobile && flutter analyze && flutter test
+cd mobile && for d in core cliente lojista telas; do (cd $d && flutter analyze); done; (cd cliente && flutter test); (cd lojista && flutter test)
 ```
-No GitHub: CI (API com PostgreSQL, app e APK), **CodeQL** (análise de segurança do código) e **Dependabot** (atualizações).
+No GitHub: CI (API com PostgreSQL, os dois apps e os dois APKs), **CodeQL** (análise de segurança do código) e **Dependabot** (atualizações).
 
 ## Arquitetura
 

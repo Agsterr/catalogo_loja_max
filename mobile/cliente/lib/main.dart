@@ -1,0 +1,113 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:loja_core/loja_core.dart';
+
+import 'app_scope.dart';
+import 'cart.dart';
+import 'current_store.dart';
+import 'screens/customer_shell.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('pt_BR');
+  await LocalNotifications.instance.init();
+  final session = Session();
+  final cart = Cart();
+  final store = CurrentStore();
+  await Future.wait([cart.load(), store.load()]);
+  await session.restore();
+  runApp(LojaApp(session: session, cart: cart, store: store));
+  Push.askPermissionOnce();
+  Push.start(session);
+  scheduleBackgroundChecks();
+}
+
+class LojaApp extends StatefulWidget {
+  const LojaApp({super.key, required this.session, required this.cart, required this.store});
+
+  final Session session;
+  final Cart cart;
+  final CurrentStore store;
+
+  @override
+  State<LojaApp> createState() => _LojaAppState();
+}
+
+class _LojaAppState extends State<LojaApp> {
+  final _navigator = GlobalKey<NavigatorState>();
+
+  Session get session => widget.session;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastState = session.state;
+    _lastUser = session.user?.id;
+    session.addListener(_backToRoot);
+  }
+
+  @override
+  void dispose() {
+    session.removeListener(_backToRoot);
+    super.dispose();
+  }
+
+  SessionState? _lastState;
+  int? _lastUser;
+
+  /// Bloqueio, saída ou troca de conta com telas abertas: volta para a raiz (vitrine ou bloqueio).
+  /// Login feito por cima da vitrine não conta: a própria tela de login volta para onde estava.
+  void _backToRoot() {
+    final state = session.state;
+    final user = session.user?.id;
+    final changed = state != _lastState || user != _lastUser;
+    final wasSignedIn = _lastState == SessionState.signedIn;
+    _lastState = state;
+    _lastUser = user;
+    if (changed && state != SessionState.restoring && (wasSignedIn || state == SessionState.blocked)) {
+      _navigator.currentState?.popUntil((route) => route.isFirst);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppScope(
+      session: session,
+      cart: widget.cart,
+      store: widget.store,
+      child: MaterialApp(
+        title: 'Loja Max',
+        navigatorKey: _navigator,
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        locale: const Locale('pt', 'BR'),
+        supportedLocales: const [Locale('pt', 'BR')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.3)),
+          child: child!,
+        ),
+        home: ListenableBuilder(
+          listenable: session,
+          builder: (context, _) => switch (session.state) {
+            SessionState.restoring => const Scaffold(body: Center(child: CircularProgressIndicator())),
+            SessionState.offline =>
+              Scaffold(body: ErrorRetry(message: 'Sem conexão com a loja.', onRetry: session.restore)),
+            SessionState.blocked => BlockedScreen(
+                reason: session.blockedReason ?? AccountBlockedException.defaultReason,
+                onSignOut: session.signOut,
+              ),
+            // equipe de loja e admin da plataforma usam o app Loja Max Lojista
+            _ when session.signedIn && session.user!.role != Role.customer => WrongAppScreen(
+                message: 'Esta conta é de quem vende. Use o app Loja Max Lojista para cuidar da loja.',
+                onSignOut: session.logout,
+              ),
+            _ => const CustomerShell(),
+          },
+        ),
+      ),
+    );
+  }
+}

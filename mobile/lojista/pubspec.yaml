@@ -1,0 +1,29 @@
+name: loja_lojista
+description: "Loja Max Lojista — pedidos, produtos, fotos, estoque e promoções da loja."
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  loja_core:
+    path: ../core
+  http: ^1.6.0
+  intl: ^0.20.2
+  url_launcher: ^6.3.3
+  # Fotos dos produtos (câmera/galeria), comprimidas e enviadas para o R2 pela API
+  image_picker: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  shared_preferences: ^2.5.3
+
+flutter:
+  uses-material-design: true
