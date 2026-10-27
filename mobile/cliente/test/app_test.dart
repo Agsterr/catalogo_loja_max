@@ -134,6 +134,37 @@ void main() {
     expect(info.deliveryZones.map((z) => z.upToKm), [3, 8]);
   });
 
+  test('entrega por entregador: pedido traz a situação da corrida e o código certo', () {
+    final order = Order.fromJson({
+      'id': 1, 'code': 'ABC123', 'status': 'CONFIRMED', 'nextStatuses': [], 'canCancel': true, 'deliveryMethod': 'DELIVERY',
+      'paymentMethod': 'PIX', 'paid': true, 'subtotal': 80, 'discount': 0, 'deliveryFee': 6, 'total': 86,
+      'createdAt': '2026-10-27T10:00:00', 'items': [], 'events': [],
+      'courier': {
+        'status': 'ACCEPTED', 'statusLabel': 'Entregador a caminho da loja', 'courierName': 'Zé', 'courierPhone': '11999990000',
+        'vehicle': 'Moto', 'pickupCode': null, 'deliveryCode': '4821', 'expiresAt': null, 'canRetry': false,
+      },
+    });
+    expect(order.courier!.deliveryCode, '4821');
+    expect(order.courier!.pickupCode, isNull);
+    expect(order.courier!.courierName, 'Zé');
+    final plain = Order.fromJson({
+      'id': 2, 'code': 'XYZ789', 'status': 'PENDING', 'nextStatuses': [], 'canCancel': true, 'deliveryMethod': 'PICKUP',
+      'paymentMethod': 'CASH', 'paid': false, 'subtotal': 10, 'discount': 0, 'deliveryFee': 0, 'total': 10,
+      'createdAt': '2026-10-27T10:00:00', 'items': [], 'events': [],
+    });
+    expect(plain.courier, isNull);
+    final store = StoreInfo.fromJson({
+      'slug': 'x', 'name': 'X', 'pickupEnabled': false, 'deliveryEnabled': true, 'deliveryFee': 0, 'courierDelivery': true,
+    });
+    expect(store.courierDelivery, isTrue);
+    final job = CourierJob.fromJson({
+      'id': 5, 'orderCode': 'ABC123', 'status': 'PICKED_UP', 'statusLabel': 'Entregador a caminho do cliente', 'storeName': 'Loja',
+      'pickupLat': -23.5, 'pickupLng': -46.6, 'tripKm': 1.3, 'fee': 6, 'itemCount': 2,
+    });
+    expect(job.pickedUp, isTrue);
+    expect(job.dropoffAddress, isNull);
+  });
+
   test('cor do nome e horário da loja', () {
     expect(colorFor('Preto'), colorFor('preta'));
     expect(colorFor('Azul marinho'), isNot(colorFor('Rosa')));

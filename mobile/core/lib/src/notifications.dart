@@ -22,6 +22,16 @@ class Channels {
     vibrationPattern: Int64List.fromList([0, 600, 300, 600, 300, 600]),
   );
 
+  /// Corrida nova para o entregador: alerta forte (quem chega primeiro leva).
+  static final jobs = AndroidNotificationChannel(
+    'corridas',
+    'Corridas',
+    description: 'Entregas novas na sua região e avisos da corrida',
+    importance: Importance.max,
+    enableVibration: true,
+    vibrationPattern: Int64List.fromList([0, 500, 250, 500]),
+  );
+
   static const promotions = AndroidNotificationChannel(
     'promocoes',
     'Promoções',
@@ -63,6 +73,7 @@ class LocalNotifications {
       await android?.createNotificationChannel(Channels.orders);
       await android?.createNotificationChannel(Channels.promotions);
       await android?.createNotificationChannel(Channels.newOrders);
+      await android?.createNotificationChannel(Channels.jobs);
       final launch = await _plugin.getNotificationAppLaunchDetails();
       if (launch?.didNotificationLaunchApp ?? false) tapped.value = launch!.notificationResponse?.payload;
       _ready = true;

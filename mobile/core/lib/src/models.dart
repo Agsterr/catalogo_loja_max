@@ -6,11 +6,12 @@ DateTime _dt(Object? v) => DateTime.parse(v as String);
 List<T> _list<T>(Object? v, T Function(Map<String, dynamic>) f) =>
     (v as List? ?? const []).map((e) => f(e as Map<String, dynamic>)).toList();
 
-enum Role { owner, staff, customer, platformAdmin }
+enum Role { owner, staff, customer, courier, platformAdmin }
 
 Role _role(String v) => switch (v) {
       'OWNER' => Role.owner,
       'STAFF' => Role.staff,
+      'COURIER' => Role.courier,
       'PLATFORM_ADMIN' => Role.platformAdmin,
       _ => Role.customer,
     };
@@ -43,6 +44,7 @@ class User {
   bool get isTeam => role == Role.owner || role == Role.staff;
   bool get isOwner => role == Role.owner;
   bool get isPlatformAdmin => role == Role.platformAdmin;
+  bool get isCourier => role == Role.courier;
 
   factory User.fromJson(Map<String, dynamic> j) => User(
         id: j['id'] as int,
@@ -386,6 +388,7 @@ class StoreInfo {
     this.latitude,
     this.longitude,
     this.deliveryZones = const [],
+    this.courierDelivery = false,
   });
 
   final String slug;
@@ -413,6 +416,9 @@ class StoreInfo {
   /// Entrega por distância (vazio = taxa fixa).
   final List<DeliveryZone> deliveryZones;
 
+  /// Entrega feita por entregador da plataforma (taxa pela distância, calculada pelo servidor).
+  final bool courierDelivery;
+
   factory StoreInfo.fromJson(Map<String, dynamic> j) => StoreInfo(
         slug: j['slug'] as String,
         name: j['name'] as String,
@@ -438,6 +444,7 @@ class StoreInfo {
         deliveryZones: (j['deliveryZones'] as List? ?? const [])
             .map((z) => DeliveryZone.fromJson(z as Map<String, dynamic>))
             .toList(),
+        courierDelivery: j['courierDelivery'] as bool? ?? false,
       );
 }
 
@@ -588,6 +595,7 @@ class Order {
     required this.items,
     required this.events,
     this.storeSlug,
+    this.courier,
   });
 
   final int id;
@@ -615,6 +623,9 @@ class Order {
   /// Loja do pedido (o app sabe por onde comprou).
   final String? storeSlug;
 
+  /// Entrega por entregador da plataforma (nulo nos demais pedidos).
+  final CourierInfo? courier;
+
   factory Order.fromJson(Map<String, dynamic> j, {String? storeSlug}) => Order(
         storeSlug: storeSlug,
         id: j['id'] as int,
@@ -636,6 +647,45 @@ class Order {
         customer: j['customer'] == null ? null : Customer.fromJson(j['customer'] as Map<String, dynamic>),
         items: _list(j['items'], OrderItem.fromJson),
         events: _list(j['events'], OrderEvent.fromJson),
+        courier: j['courier'] == null ? null : CourierInfo.fromJson(j['courier'] as Map<String, dynamic>),
+      );
+}
+
+/// Situação da corrida do pedido. `pickupCode` só a loja vê; `deliveryCode` só o cliente.
+class CourierInfo {
+  const CourierInfo({
+    required this.status,
+    required this.statusLabel,
+    this.courierName,
+    this.courierPhone,
+    this.vehicle,
+    this.pickupCode,
+    this.deliveryCode,
+    this.expiresAt,
+    this.canRetry = false,
+  });
+
+  /// WAITING (falta pagar/confirmar), OPEN, ACCEPTED, PICKED_UP, DELIVERED, EXPIRED, CANCELED.
+  final String status;
+  final String statusLabel;
+  final String? courierName;
+  final String? courierPhone;
+  final String? vehicle;
+  final String? pickupCode;
+  final String? deliveryCode;
+  final DateTime? expiresAt;
+  final bool canRetry;
+
+  factory CourierInfo.fromJson(Map<String, dynamic> j) => CourierInfo(
+        status: j['status'] as String,
+        statusLabel: j['statusLabel'] as String,
+        courierName: j['courierName'] as String?,
+        courierPhone: j['courierPhone'] as String?,
+        vehicle: j['vehicle'] as String?,
+        pickupCode: j['pickupCode'] as String?,
+        deliveryCode: j['deliveryCode'] as String?,
+        expiresAt: j['expiresAt'] == null ? null : _dt(j['expiresAt']),
+        canRetry: j['canRetry'] as bool? ?? false,
       );
 }
 
@@ -820,5 +870,246 @@ class QuoteLine {
         stock: j['stock'] as int,
         quantity: j['quantity'] as int,
         unitPrice: _dn(j['unitPrice']),
+      );
+}
+
+
+// --- Entregador ---
+
+/// Veículo do entregador: valor da API e nome para mostrar.
+const vehicleLabels = {'MOTO': 'Moto', 'BIKE': 'Bicicleta', 'CARRO': 'Carro', 'A_PE': 'A pé'};
+
+class CourierProfile {
+  const CourierProfile({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.phone,
+    required this.vehicle,
+    this.plate,
+    required this.city,
+    required this.state,
+    this.baseLat,
+    this.baseLng,
+    required this.radiusKm,
+    required this.status,
+    this.statusReason,
+    required this.online,
+    required this.deliveredCount,
+    required this.canceledCount,
+  });
+
+  final int id;
+  final String name;
+  final String email;
+  final String phone;
+  final String vehicle;
+  final String? plate;
+  final String city;
+  final String state;
+  final double? baseLat;
+  final double? baseLng;
+  final int radiusKm;
+
+  /// PENDING (em análise), APPROVED ou BLOCKED.
+  final String status;
+  final String? statusReason;
+  final bool online;
+  final int deliveredCount;
+  final int canceledCount;
+
+  bool get approved => status == 'APPROVED';
+
+  factory CourierProfile.fromJson(Map<String, dynamic> j) => CourierProfile(
+        id: j['id'] as int,
+        name: j['name'] as String,
+        email: j['email'] as String,
+        phone: j['phone'] as String,
+        vehicle: j['vehicle'] as String,
+        plate: j['plate'] as String?,
+        city: j['city'] as String,
+        state: j['state'] as String,
+        baseLat: _dn(j['baseLat']),
+        baseLng: _dn(j['baseLng']),
+        radiusKm: j['radiusKm'] as int,
+        status: j['status'] as String,
+        statusReason: j['statusReason'] as String?,
+        online: j['online'] as bool,
+        deliveredCount: j['deliveredCount'] as int,
+        canceledCount: j['canceledCount'] as int,
+      );
+}
+
+/// Corrida no mural (sem o endereço do cliente).
+class CourierJobCard {
+  const CourierJobCard({
+    required this.id,
+    required this.storeName,
+    this.pickupAddress,
+    this.city,
+    this.distanceToStoreKm,
+    required this.tripKm,
+    required this.fee,
+    required this.itemCount,
+    required this.expiresAt,
+  });
+
+  final int id;
+  final String storeName;
+  final String? pickupAddress;
+  final String? city;
+  final double? distanceToStoreKm;
+  final double tripKm;
+  final double fee;
+  final int itemCount;
+  final DateTime expiresAt;
+
+  factory CourierJobCard.fromJson(Map<String, dynamic> j) => CourierJobCard(
+        id: j['id'] as int,
+        storeName: j['storeName'] as String,
+        pickupAddress: j['pickupAddress'] as String?,
+        city: j['city'] as String?,
+        distanceToStoreKm: _dn(j['distanceToStoreKm']),
+        tripKm: _d(j['tripKm']),
+        fee: _d(j['fee']),
+        itemCount: j['itemCount'] as int,
+        expiresAt: _dt(j['expiresAt']),
+      );
+}
+
+/// Corrida do entregador (aceita, em andamento ou concluída): endereço e cliente liberados.
+class CourierJob {
+  const CourierJob({
+    required this.id,
+    required this.orderCode,
+    required this.status,
+    required this.statusLabel,
+    required this.storeName,
+    this.pickupAddress,
+    required this.pickupLat,
+    required this.pickupLng,
+    this.dropoffAddress,
+    this.dropoffLat,
+    this.dropoffLng,
+    this.customerName,
+    this.customerPhone,
+    required this.tripKm,
+    required this.fee,
+    required this.itemCount,
+    this.deliveredAt,
+  });
+
+  final int id;
+  final String orderCode;
+
+  /// ACCEPTED, PICKED_UP, DELIVERED...
+  final String status;
+  final String statusLabel;
+  final String storeName;
+  final String? pickupAddress;
+  final double pickupLat;
+  final double pickupLng;
+  final String? dropoffAddress;
+  final double? dropoffLat;
+  final double? dropoffLng;
+  final String? customerName;
+  final String? customerPhone;
+  final double tripKm;
+  final double fee;
+  final int itemCount;
+  final DateTime? deliveredAt;
+
+  bool get pickedUp => status == 'PICKED_UP';
+
+  factory CourierJob.fromJson(Map<String, dynamic> j) => CourierJob(
+        id: j['id'] as int,
+        orderCode: j['orderCode'] as String,
+        status: j['status'] as String,
+        statusLabel: j['statusLabel'] as String,
+        storeName: j['storeName'] as String,
+        pickupAddress: j['pickupAddress'] as String?,
+        pickupLat: _d(j['pickupLat']),
+        pickupLng: _d(j['pickupLng']),
+        dropoffAddress: j['dropoffAddress'] as String?,
+        dropoffLat: _dn(j['dropoffLat']),
+        dropoffLng: _dn(j['dropoffLng']),
+        customerName: j['customerName'] as String?,
+        customerPhone: j['customerPhone'] as String?,
+        tripKm: _d(j['tripKm']),
+        fee: _d(j['fee']),
+        itemCount: j['itemCount'] as int,
+        deliveredAt: j['deliveredAt'] == null ? null : _dt(j['deliveredAt']),
+      );
+}
+
+class CourierEarnings {
+  const CourierEarnings({required this.today, required this.week, required this.month});
+
+  final EarningsPeriod today;
+  final EarningsPeriod week;
+  final EarningsPeriod month;
+
+  factory CourierEarnings.fromJson(Map<String, dynamic> j) => CourierEarnings(
+        today: EarningsPeriod.fromJson(j['today'] as Map<String, dynamic>),
+        week: EarningsPeriod.fromJson(j['week'] as Map<String, dynamic>),
+        month: EarningsPeriod.fromJson(j['month'] as Map<String, dynamic>),
+      );
+}
+
+class EarningsPeriod {
+  const EarningsPeriod(this.total, this.count);
+
+  final double total;
+  final int count;
+
+  factory EarningsPeriod.fromJson(Map<String, dynamic> j) => EarningsPeriod(_d(j['total']), j['count'] as int);
+}
+
+/// Entregador na lista do admin da plataforma.
+class AdminCourier {
+  const AdminCourier({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.phone,
+    required this.vehicle,
+    this.plate,
+    required this.city,
+    required this.state,
+    required this.status,
+    this.statusReason,
+    required this.online,
+    required this.deliveredCount,
+    required this.canceledCount,
+  });
+
+  final int id;
+  final String name;
+  final String email;
+  final String phone;
+  final String vehicle;
+  final String? plate;
+  final String city;
+  final String state;
+  final String status;
+  final String? statusReason;
+  final bool online;
+  final int deliveredCount;
+  final int canceledCount;
+
+  factory AdminCourier.fromJson(Map<String, dynamic> j) => AdminCourier(
+        id: j['id'] as int,
+        name: j['name'] as String,
+        email: j['email'] as String,
+        phone: j['phone'] as String,
+        vehicle: j['vehicle'] as String,
+        plate: j['plate'] as String?,
+        city: j['city'] as String,
+        state: j['state'] as String,
+        status: j['status'] as String,
+        statusReason: j['statusReason'] as String?,
+        online: j['online'] as bool,
+        deliveredCount: j['deliveredCount'] as int,
+        canceledCount: j['canceledCount'] as int,
       );
 }

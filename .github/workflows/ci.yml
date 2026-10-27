@@ -60,11 +60,11 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Analyze e testes (pacote comum, app do cliente, app do lojista, gerador de telas)
+      - name: Analyze e testes (pacote comum, apps do cliente, lojista e entregador, gerador de telas)
         working-directory: mobile
         run: |
           set -euo pipefail
-          for d in core cliente lojista telas; do
+          for d in core cliente lojista entregador telas; do
             echo "::group::$d"
             (cd "$d" && flutter pub get && flutter analyze && if [ -d test ]; then flutter test; fi)
             echo "::endgroup::"
@@ -80,6 +80,7 @@ jobs:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_APP_ID_CLIENTE: ${{ secrets.FIREBASE_APP_ID_CLIENTE }}
           FIREBASE_APP_ID_LOJISTA: ${{ secrets.FIREBASE_APP_ID_LOJISTA }}
+          FIREBASE_APP_ID_ENTREGADOR: ${{ secrets.FIREBASE_APP_ID_ENTREGADOR }}
         run: |
           set -euo pipefail
           build() {
@@ -92,10 +93,12 @@ jobs:
           }
           build cliente "$FIREBASE_APP_ID_CLIENTE"
           build lojista "$FIREBASE_APP_ID_LOJISTA"
+          build entregador "$FIREBASE_APP_ID_ENTREGADOR"
       - uses: actions/upload-artifact@v4
         with:
           name: apks
           path: |
             mobile/cliente/build/app/outputs/flutter-apk/app-release.apk
             mobile/lojista/build/app/outputs/flutter-apk/app-release.apk
+            mobile/entregador/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14

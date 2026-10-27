@@ -339,6 +339,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
   double? _lat;
   double? _lng;
   List<DeliveryZone> _zones = [];
+  bool _courier = false;
   bool _pickup = true;
   bool _delivery = true;
   bool _loaded = false;
@@ -372,6 +373,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
         _lat = s.latitude;
         _lng = s.longitude;
         _zones = [...s.deliveryZones];
+        _courier = s.courierDelivery;
         _free.text = s.freeDeliveryFrom?.toStringAsFixed(2).replaceAll('.', ',') ?? '';
         _pickup = s.pickupEnabled;
         _delivery = s.deliveryEnabled;
@@ -471,7 +473,8 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
         'state': _uf.text.trim(),
         'latitude': _lat,
         'longitude': _lng,
-        'deliveryZones': _zones.map((z) => z.toJson()).toList(),
+        'deliveryZones': _courier ? <Object>[] : _zones.map((z) => z.toJson()).toList(),
+        'courierDelivery': _courier,
         'openingHours': _hoursSet ? _week.map((d) => d.toJson()).toList() : null,
       });
       if (mounted) showInfo(context, 'Dados da loja salvos.');
@@ -657,6 +660,18 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
               SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Retirada na loja'), value: _pickup, onChanged: (v) => setState(() => _pickup = v)),
               SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Entrega'), value: _delivery, onChanged: (v) => setState(() => _delivery = v)),
               if (_delivery) ...[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Entregador da plataforma'),
+                  subtitle: Text(_lat == null
+                      ? 'Marque a localização da loja (acima) para usar.'
+                      : 'Entregadores da região pegam a entrega. A taxa é pela distância (calculada pela plataforma) e o '
+                          'cliente paga antes. Você passa o código de coleta quando o entregador chegar.'),
+                  value: _courier,
+                  onChanged: _lat == null && !_courier ? null : (v) => setState(() => _courier = v),
+                ),
+              ],
+              if (_delivery && !_courier) ...[
                 if (_zones.isEmpty)
                   TextField(
                     controller: _fee,

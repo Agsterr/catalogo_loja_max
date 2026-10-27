@@ -261,7 +261,10 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
     super.dispose();
   }
 
-  bool get _byDistance => _store != null && _store!.deliveryZones.isNotEmpty && _store!.latitude != null;
+  /// Taxa pela distância: faixas da loja ou entregador da plataforma (o servidor calcula; precisa da localização).
+  bool get _byDistance => _store != null && (_store!.courierDelivery || (_store!.deliveryZones.isNotEmpty && _store!.latitude != null));
+
+  bool get _byCourier => _delivery && (_store?.courierDelivery ?? false);
 
   Future<void> _locate() async {
     setState(() => _locating = true);
@@ -305,7 +308,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
       final json = await widget.api.post('/api/stores/$slug/orders', {
         'items': [for (final i in widget.cart.items) {'variantId': i.variantId, 'quantity': i.quantity}],
         'deliveryMethod': _delivery ? 'DELIVERY' : 'PICKUP',
-        'paymentMethod': _payment,
+        'paymentMethod': _byCourier && _payment == 'CASH' ? 'PIX' : _payment,
         if (_delivery) 'address': _address.text.trim(),
         if (_delivery && _where != null) ...{'deliveryLat': _where!.lat, 'deliveryLng': _where!.lng},
         if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
@@ -395,18 +398,31 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
                           style: t.bodySmall?.copyWith(color: _quote!.available ? null : Theme.of(context).colorScheme.error),
                         ),
                       ),
-                    Text('Entregamos até ${kmLabel(s.deliveryZones.last.upToKm)}. A localização só calcula a taxa e não é guardada.',
+                    Text(
+                        _byCourier
+                            ? 'Entrega por entregador parceiro: a taxa vem da distância. Sua localização vai só para o entregador '
+                                'achar o endereço.'
+                            : 'Entregamos até ${kmLabel(s.deliveryZones.last.upToKm)}. A localização só calcula a taxa e não é guardada.',
                         style: t.bodySmall),
                   ],
                 ],
                 const SizedBox(height: 12),
-                Text('Pagamento (na retirada/entrega)', style: t.titleMedium),
+                Text(_byCourier ? 'Pagamento antecipado' : 'Pagamento (na retirada/entrega)', style: t.titleMedium),
                 const SizedBox(height: 8),
                 SegmentedButton<String>(
-                  segments: [for (final e in paymentLabels.entries) ButtonSegment(value: e.key, label: Text(e.value))],
-                  selected: {_payment},
+                  segments: [
+                    for (final e in paymentLabels.entries)
+                      if (!(_byCourier && e.key == 'CASH')) ButtonSegment(value: e.key, label: Text(e.value)),
+                  ],
+                  selected: {_byCourier && _payment == 'CASH' ? 'PIX' : _payment},
                   onSelectionChanged: (v) => setState(() => _payment = v.first),
                 ),
+                if (_byCourier)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text('A loja combina o pagamento com você. O entregador só sai depois que ela confirmar o pagamento e o pedido.',
+                        style: t.bodySmall),
+                  ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _notes,

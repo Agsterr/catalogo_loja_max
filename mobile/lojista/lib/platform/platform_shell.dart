@@ -20,6 +20,7 @@ class _PlatformShellState extends State<PlatformShell> {
     return Scaffold(
       body: IndexedStack(index: _tab, children: [
         _StoresTab(api: api),
+        _CouriersTab(api: api),
         _UsersTab(api: api),
         AccountScreen(session: AppScope.of(context).session),
       ]),
@@ -28,6 +29,7 @@ class _PlatformShellState extends State<PlatformShell> {
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.storefront_outlined), selectedIcon: Icon(Icons.storefront), label: 'Lojas'),
+          NavigationDestination(icon: Icon(Icons.two_wheeler_outlined), selectedIcon: Icon(Icons.two_wheeler), label: 'Entregadores'),
           NavigationDestination(icon: Icon(Icons.people_outline), selectedIcon: Icon(Icons.people), label: 'Contas'),
           NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Conta'),
         ],
@@ -154,6 +156,7 @@ class _UsersTab extends StatelessWidget {
     Role.owner: 'dono de loja',
     Role.staff: 'funcionário',
     Role.customer: 'cliente',
+    Role.courier: 'entregador',
     Role.platformAdmin: 'admin',
   };
 
@@ -195,6 +198,98 @@ class _UsersTab extends StatelessWidget {
                     if (u.twoFactorEnabled) const PopupMenuItem(value: '2fa', child: Text('Desligar duas etapas (perdeu o celular)')),
                   ],
                 ),
+        ),
+      );
+}
+
+/// Entregadores: aprovar cadastros novos e bloquear quem não deve mais entregar.
+class _CouriersTab extends StatefulWidget {
+  const _CouriersTab({required this.api});
+
+  final ApiClient api;
+
+  @override
+  State<_CouriersTab> createState() => _CouriersTabState();
+}
+
+class _CouriersTabState extends State<_CouriersTab> {
+  static const _filters = {'PENDING': 'Em análise', 'APPROVED': 'Aprovados', 'BLOCKED': 'Bloqueados'};
+
+  String _status = 'PENDING';
+  var _key = GlobalKey<PagedListState<AdminCourier>>();
+
+  Future<void> _act(AdminCourier c, bool approve) async {
+    try {
+      if (approve) {
+        await widget.api.post('/api/platform/couriers/${c.id}/approve');
+      } else {
+        final reason = await _askReason(context, 'Bloquear ${c.name}?');
+        if (reason == null) return;
+        await widget.api.post('/api/platform/couriers/${c.id}/block', {'reason': reason});
+      }
+      _key.currentState?.refresh();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: const Text('Entregadores'),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(52),
+            child: SizedBox(
+              height: 52,
+              child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12), children: [
+                for (final e in _filters.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8, bottom: 8),
+                    child: ChoiceChip(
+                      label: Text(e.value),
+                      selected: _status == e.key,
+                      onSelected: (_) => setState(() {
+                        _status = e.key;
+                        _key = GlobalKey();
+                      }),
+                    ),
+                  ),
+              ]),
+            ),
+          ),
+        ),
+        body: PagedList<AdminCourier>(
+          key: _key,
+          load: (page) async => PageResult.fromJson(
+              await widget.api.get('/api/platform/couriers?${Uri(queryParameters: {'page': '$page', 'status': _status}).query}')
+                  as Map<String, dynamic>,
+              AdminCourier.fromJson),
+          empty: const EmptyState(icon: Icons.two_wheeler_rounded, text: 'Nenhum entregador nesta lista.'),
+          separator: const Divider(height: 1),
+          padding: EdgeInsets.zero,
+          itemBuilder: (context, c) => ListTile(
+            leading: Icon(c.status == 'BLOCKED' ? Icons.block_rounded : Icons.two_wheeler_rounded,
+                color: c.status == 'BLOCKED' ? Theme.of(context).colorScheme.error : null),
+            title: Text(c.name),
+            subtitle: Text([
+              '${vehicleLabels[c.vehicle] ?? c.vehicle}${c.plate == null ? '' : ' ${c.plate}'}',
+              '${c.city} - ${c.state}',
+              c.phone,
+              '${c.deliveredCount} entregas',
+              if (c.canceledCount > 0) '${c.canceledCount} desistências',
+              if (c.statusReason != null) c.statusReason!,
+            ].join(' · ')),
+            isThreeLine: true,
+            trailing: c.status == 'PENDING'
+                ? Row(mainAxisSize: MainAxisSize.min, children: [
+                    IconButton(tooltip: 'Bloquear', onPressed: () => _act(c, false), icon: const Icon(Icons.close_rounded)),
+                    FilledButton(onPressed: () => _act(c, true), child: const Text('Aprovar')),
+                  ])
+                : TextButton(
+                    onPressed: () => _act(c, c.status == 'BLOCKED'),
+                    child: Text(c.status == 'BLOCKED' ? 'Reativar' : 'Bloquear'),
+                  ),
+          ),
         ),
       );
 }

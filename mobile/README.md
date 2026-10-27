@@ -1,11 +1,12 @@
 # Apps Flutter
 
-Dois apps, como no Gerenciamento Max (públicos, ícones e fichas de loja diferentes), com o código comum num pacote:
+Três apps, como no Gerenciamento Max (públicos, ícones e fichas de loja diferentes), com o código comum num pacote:
 
 | Pasta | App | Para quem | ID (Android / iOS) |
 |---|---|---|---|
 | `cliente/` | **Loja Max** | Clientes: escolher a loja, vitrine, carrinho, pedidos, avisos e promoções | `io.github.agsterr.lojamax` |
 | `lojista/` | **Loja Max Lojista** | Quem vende: abrir a loja, pedidos, produtos com fotos, estoque, promoções, resumo, equipe, auditoria. O admin da plataforma também entra por aqui | `io.github.agsterr.lojamax.lojista` |
+| `entregador/` | **Loja Max Entregador** | Entregadores: cadastro, mural de corridas por região, aceitar, coletar e entregar com códigos, ganhos | `io.github.agsterr.lojamax.entregador` |
 | `core/` | pacote `loja_core` | API, sessão, modelos, tema, avisos (push/sino/segundo plano) e telas comuns (entrar, conta, segurança, sino, pedido) | — |
 | `telas/` | gerador de imagens | Captura as telas dos dois apps com dados de exemplo | — |
 
@@ -22,7 +23,7 @@ flutter run --dart-define=API_URL=http://10.0.2.2:8080        # emulador Android
 
 Testes e análise:
 ```bash
-for d in core cliente lojista telas; do (cd $d && flutter analyze && ([ -d test ] && flutter test || true)); done
+for d in core cliente lojista entregador telas; do (cd $d && flutter analyze && ([ -d test ] && flutter test || true)); done
 ```
 
 | `--dart-define` | Uso |

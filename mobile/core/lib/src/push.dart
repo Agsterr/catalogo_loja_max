@@ -138,7 +138,9 @@ class Push {
       payload: _payload(m),
       channel: promo
           ? Channels.promotions
-          : m.data['kind'] == 'NEW_ORDER'
+          : m.data['type'] == 'courier'
+              ? Channels.jobs
+              : m.data['kind'] == 'NEW_ORDER'
               ? Channels.newOrders
               : Channels.orders,
     );

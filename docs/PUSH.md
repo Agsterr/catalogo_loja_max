@@ -21,7 +21,7 @@ conta). Ao sair, `POST /api/me/push-token/remove`. Promoções podem ser desliga
 (`PUT /api/me/push-preferences`). O aviso leva o endereço da loja (`slug`), e o app abre o pedido/produto na loja certa.
 
 Canais do Android: `novos_pedidos` (novo pedido para a equipe: importância máxima, vibração e toque insistente), `pedidos` (demais
-pedidos e estoque) e `promocoes` (promoções e "chegou!").
+pedidos e estoque) `promocoes` (promoções e "chegou!") e `corridas` (app do entregador: corrida nova na região, importância máxima).
 
 ## Configurar uma vez
 1. https://console.firebase.google.com → **Criar projeto**.

@@ -55,6 +55,8 @@ Geradas pelo próprio Flutter com dados de exemplo: `cd mobile/telas && flutter 
   o produto: −1/+1/+5); **exportar pedidos e estoque em planilha (CSV)** no relatório.
 - **Entrega por distância:** até 6 faixas ("até 3 km R$ 8, até 8 km R$ 15"); além da última a loja não entrega. O cliente toca em
   "Calcular a entrega" e a taxa vem da loja (`/api/public/stores/{slug}/delivery-quote`); frete grátis continua valendo. Sem faixas, taxa fixa.
+- **Entrega por entregador da plataforma** (app **Loja Max Entregador**): cadastro com aprovação, mural por região, aceite (só um
+  leva), coleta e entrega confirmadas por código, ganhos. Veja `docs/ENTREGADORES.md` (fluxo, etapas e decisões de escala).
 - **Alerta forte de novo pedido** (canal `novos_pedidos`: som alto, vibração e toque insistente).
 - Produtos com tamanhos/cores, **fotos pela câmera/galeria** (R2), entrada/contagem/perda de estoque com histórico paginado.
 - Promoções por período — loja inteira, departamento, categoria ou **um produto só** — com **push para os clientes quando começa**.

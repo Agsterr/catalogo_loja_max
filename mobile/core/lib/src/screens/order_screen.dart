@@ -117,6 +117,12 @@ class _OrderScreenState extends State<OrderScreen> {
           Row(children: [StatusChip(o.status), const Spacer(), Text(dateTime(o.createdAt), style: t.bodySmall)]),
           const SizedBox(height: 12),
           if (o.customer != null) _CustomerCard(customer: o.customer!, code: o.code, status: o.status),
+          if (o.courier != null)
+            _CourierCard(
+              info: o.courier!,
+              team: widget.team,
+              onRetry: () => _act(() => widget.api.post('/api/store/orders/${o.id}/courier/retry', {})),
+            ),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -298,4 +304,72 @@ String statusMessage(String name, String code, OrderStatus status) {
     OrderStatus.canceled => 'precisamos cancelar o seu pedido. Podemos conversar?',
   };
   return 'Olá, $first! Pedido #$code: $what';
+}
+
+
+/// Entrega por entregador da plataforma: situação da corrida e o código certo para cada lado
+/// (a loja vê o de coleta; o cliente, o de entrega).
+class _CourierCard extends StatelessWidget {
+  const _CourierCard({required this.info, required this.team, required this.onRetry});
+
+  final CourierInfo info;
+  final bool team;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final code = team ? info.pickupCode : info.deliveryCode;
+    return Card(
+      color: scheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.two_wheeler_rounded, color: scheme.onSecondaryContainer),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Entregador da plataforma', style: t.titleSmall)),
+          ]),
+          const SizedBox(height: 6),
+          Text(info.statusLabel, style: t.bodyLarge?.copyWith(fontWeight: FontWeight.w700)),
+          if (info.courierName != null)
+            Text([info.courierName!, ?info.vehicle].join(' · '), style: t.bodyMedium),
+          if (info.courierPhone != null)
+            TextButton.icon(
+              style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
+              onPressed: () => launchUrl(Uri(scheme: 'tel', path: info.courierPhone)),
+              icon: const Icon(Icons.call_rounded, size: 18),
+              label: Text(info.courierPhone!),
+            ),
+          if (code != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(color: scheme.surface, borderRadius: BorderRadius.circular(12)),
+              child: Column(children: [
+                Text(team ? 'Código de coleta' : 'Código de entrega', style: t.bodySmall),
+                Text(code, style: t.headlineMedium?.copyWith(fontWeight: FontWeight.w800, letterSpacing: 6)),
+              ]),
+            ),
+            const SizedBox(height: 6),
+            Text(
+                team
+                    ? 'Passe este código ao entregador só quando ele chegar para retirar o pedido.'
+                    : 'Diga este código ao entregador só quando receber o pedido. Ele confirma a entrega com ele.',
+                style: t.bodySmall),
+          ],
+          if (info.status == 'OPEN' && info.expiresAt != null) ...[
+            const SizedBox(height: 4),
+            Text('Os entregadores da região já foram avisados.', style: t.bodySmall),
+          ],
+          if (team && info.canRetry) ...[
+            const SizedBox(height: 8),
+            FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh_rounded), label: const Text('Chamar entregador de novo')),
+          ],
+        ]),
+      ),
+    );
+  }
 }
