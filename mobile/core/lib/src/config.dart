@@ -15,5 +15,8 @@ class AppConfig {
   static Uri get termsUrl => Uri.parse('$siteUrl/termos');
   static Uri get deleteAccountUrl => Uri.parse('$siteUrl/excluir-conta');
 
+  /// Endereço da loja na web, para o lojista mandar ao cliente (`/loja/<slug>`, servido pelo nginx).
+  static String storeWebUrl(String slug) => '$siteUrl/loja/$slug';
+
   static const supportEmail = String.fromEnvironment('SUPPORT_EMAIL', defaultValue: 'contato@lojamax.com.br');
 }
