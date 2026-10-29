@@ -1,0 +1,20 @@
+Faça entregas para as lojas da Loja Max quando quiser, direto do celular.
+
+🛵 COMO FUNCIONA
+1. Entre como entregador e fique online quando estiver disponível
+2. Veja no mural as corridas de lojas perto de você
+3. Aceite a corrida, vá até a loja e confirme a coleta com o código
+4. Entregue ao cliente e confirme com o código de entrega
+5. Acompanhe seus ganhos e bônus no próprio app
+
+📍 LOCALIZAÇÃO
+• A posição só é usada enquanto o app está aberto e você está online, para mostrar as corridas perto de você
+• Durante uma entrega, a loja e o cliente acompanham sua posição no pedido
+
+⭐ AVALIAÇÕES E GANHOS
+• Veja sua média de estrelas e os comentários das entregas
+• Confira o valor de cada corrida, bônus e o histórico de pagamentos
+
+🔒 SUA CONTA
+• Seus dados de cadastro são usados só para as corridas e pagamentos
+• Conexão segura (HTTPS). Política de privacidade e termos estão em Ajustes.

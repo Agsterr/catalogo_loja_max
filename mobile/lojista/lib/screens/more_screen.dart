@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:loja_core/loja_core.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../app_scope.dart';
 import 'admin_screens.dart';
@@ -50,8 +52,19 @@ class MoreScreen extends StatelessWidget {
         if (session.user?.storeSlug != null)
           ListTile(
             leading: const Icon(Icons.link_rounded),
-            title: const Text('Endereço da loja'),
-            subtitle: Text(session.user!.storeSlug!),
+            title: const Text('Link da minha loja na web'),
+            subtitle: Text(AppConfig.storeWebUrl(session.user!.storeSlug!)),
+            trailing: IconButton(
+              tooltip: 'Copiar link',
+              icon: const Icon(Icons.copy_rounded),
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: AppConfig.storeWebUrl(session.user!.storeSlug!)));
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copiado')));
+              },
+            ),
+            onTap: () => SharePlus.instance.share(ShareParams(
+              text: 'Conheça a ${session.user!.storeName ?? 'nossa loja'} e compre pelo link: ${AppConfig.storeWebUrl(session.user!.storeSlug!)}',
+            )),
           ),
         ListTile(
           leading: const Icon(Icons.person_rounded),

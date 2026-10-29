@@ -1,0 +1,19 @@
+O app da sua loja no celular. Acompanhe os pedidos, cadastre produtos com fotos e controle o estoque de onde estiver.
+
+🏬 PARA QUEM VENDE
+• Pedidos em tempo real: aceite, separe, marque como pronto ou entregue
+• Produtos com fotos, tamanhos, cores e preços; promoções com prazo
+• Estoque por variação de tamanho e cor
+• Resumo de vendas do dia, da semana e do mês
+• Equipe: convide quem ajuda na loja e defina o que cada pessoa pode fazer
+• Auditoria: veja quem mudou o quê e quando
+
+🔔 AVISOS
+• Aviso quando chega um pedido novo, mesmo com o app fechado
+• Canal próprio de notificações, que você controla nos ajustes do aparelho
+
+🔒 ACESSO
+• Entre com a conta da sua loja. Clientes usam o app Loja Max, não este.
+• Seus dados e os da loja ficam protegidos em conexão segura (HTTPS)
+
+Política de privacidade e termos estão no próprio app, em Ajustes.

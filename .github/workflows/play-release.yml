@@ -1,0 +1,184 @@
+name: Play Store
+
+# Push na main mexendo em mobile/** → builda o .aab de cada app (cliente, lojista, entregador) e envia para a
+# faixa de teste fechado (alpha) da Google Play. Faixa: input manual > variável PLAY_TRACK > alpha.
+# Pré-requisitos (uma vez, no Play Console e no GitHub): ver docs/PLAY_STORE.md.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "mobile/**"
+      - ".github/workflows/play-release.yml"
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: "Quais apps enviar"
+        type: choice
+        default: todos
+        options: [todos, cliente, lojista, entregador]
+      track:
+        description: "Faixa da Play"
+        type: choice
+        default: alpha
+        options: [internal, alpha, beta, production]
+      status:
+        description: "auto = variável PLAY_RELEASE_STATUS (padrão draft). draft até a 1ª aprovação, depois completed"
+        type: choice
+        default: auto
+        options: [auto, draft, completed]
+
+concurrency:
+  group: play-release-loja-max
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  API_URL: ${{ vars.API_URL || 'https://lojamax.focodev.com.br' }}
+  SITE_URL: ${{ vars.PUBLIC_URL || 'https://lojamax.focodev.com.br' }}
+  # Firebase (push). Sem os secrets o app sai sem push (veja docs/PUSH.md).
+  FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+  FIREBASE_SENDER_ID: ${{ secrets.FIREBASE_SENDER_ID }}
+  FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+  # Variável do repositório PLAY_RELEASE_STATUS: deixe "draft" até a 1ª versão ser aprovada, depois "completed".
+  RELEASE_STATUS: ${{ (github.event.inputs.status != '' && github.event.inputs.status != 'auto') && github.event.inputs.status || vars.PLAY_RELEASE_STATUS || 'draft' }}
+  TRACK: ${{ github.event.inputs.track || vars.PLAY_TRACK || 'alpha' }}
+
+jobs:
+  release:
+    name: AAB ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: cliente
+            package: io.github.agsterr.lojamax
+          - app: lojista
+            package: io.github.agsterr.lojamax.lojista
+          - app: entregador
+            package: io.github.agsterr.lojamax.entregador
+    steps:
+      - name: Filtrar app
+        id: skip
+        run: |
+          SEL="${{ github.event.inputs.apps || 'todos' }}"
+          if [ "$SEL" != "todos" ] && [ "$SEL" != "${{ matrix.app }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.skip.outputs.skip != 'true'
+
+      - name: Definir versão
+        if: steps.skip.outputs.skip != 'true'
+        id: version
+        working-directory: mobile/${{ matrix.app }}
+        run: |
+          set -euo pipefail
+          LINE=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          NAME="${LINE%%+*}"
+          # A Play só aceita versionCode maior que o último enviado: o número da execução sempre cresce.
+          CODE=$((1000 + ${{ github.run_number }}))
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "code=${CODE}" >> "$GITHUB_OUTPUT"
+          echo "Versão ${NAME}+${CODE}"
+
+      - uses: actions/setup-java@v4
+        if: steps.skip.outputs.skip != 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        if: steps.skip.outputs.skip != 'true'
+        with:
+          channel: stable
+          cache: true
+
+      - name: Assinatura (chave de upload)
+        if: steps.skip.outputs.skip != 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "Configure os secrets ANDROID_KEYSTORE_* (veja docs/PLAY_STORE.md)."; exit 1
+          fi
+          DIR="mobile/${{ matrix.app }}/android"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$DIR/app/upload-keystore.jks"
+          cat > "$DIR/key.properties" <<EOF
+          storePassword=${KEYSTORE_PASSWORD}
+          keyPassword=${KEY_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Build AAB
+        if: steps.skip.outputs.skip != 'true'
+        working-directory: mobile/${{ matrix.app }}
+        env:
+          # Cada app tem o seu FIREBASE_APP_ID (veja docs/PUSH.md).
+          FIREBASE_APP_ID: ${{ matrix.app == 'cliente' && secrets.FIREBASE_APP_ID_CLIENTE || matrix.app == 'lojista' && secrets.FIREBASE_APP_ID_LOJISTA || secrets.FIREBASE_APP_ID_ENTREGADOR }}
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build appbundle --release \
+            --build-name=${{ steps.version.outputs.name }} \
+            --build-number=${{ steps.version.outputs.code }} \
+            --dart-define=API_URL=${API_URL} \
+            --dart-define=SITE_URL=${SITE_URL} \
+            --dart-define=FIREBASE_API_KEY=${FIREBASE_API_KEY} \
+            --dart-define=FIREBASE_APP_ID=${FIREBASE_APP_ID} \
+            --dart-define=FIREBASE_SENDER_ID=${FIREBASE_SENDER_ID} \
+            --dart-define=FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+
+      - name: Guardar AAB
+        if: steps.skip.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: loja-max-${{ matrix.app }}-play-${{ steps.version.outputs.name }}-${{ steps.version.outputs.code }}
+          path: |
+            mobile/${{ matrix.app }}/build/app/outputs/bundle/release/app-release.aab
+            mobile/${{ matrix.app }}/build/app/outputs/mapping/release/mapping.txt
+          retention-days: 30
+
+      - name: Conta de serviço da Play configurada?
+        if: steps.skip.outputs.skip != 'true'
+        id: creds
+        env:
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$PLAY_JSON" ]; then
+            echo "::warning::Secret PLAY_SERVICE_ACCOUNT_JSON ausente: o .aab ficou só nos artifacts (veja docs/PLAY_STORE.md)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enviar para a Play (${{ env.TRACK }})
+        if: steps.skip.outputs.skip != 'true' && steps.creds.outputs.ok == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ matrix.package }}
+          releaseFiles: mobile/${{ matrix.app }}/build/app/outputs/bundle/release/app-release.aab
+          mappingFile: mobile/${{ matrix.app }}/build/app/outputs/mapping/release/mapping.txt
+          track: ${{ env.TRACK }}
+          status: ${{ env.RELEASE_STATUS }}
+          releaseName: ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
+
+      - name: Resumo
+        if: steps.skip.outputs.skip != 'true'
+        run: |
+          if [ "${{ steps.creds.outputs.ok }}" = "true" ]; then
+            echo "### ${{ matrix.app }} ${{ steps.version.outputs.name }}+${{ steps.version.outputs.code }} enviado para ${TRACK} (${RELEASE_STATUS})" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### ${{ matrix.app }} ${{ steps.version.outputs.name }}+${{ steps.version.outputs.code }}: .aab nos artifacts (sem conta de serviço da Play)" >> "$GITHUB_STEP_SUMMARY"
+          fi
