@@ -34,6 +34,7 @@ import 'package:loja_lojista/screens/store_shell.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _api = 'http://api.test';
+const _playStore = bool.fromEnvironment('PLAY_STORE');
 final _out = Directory('../../docs/telas');
 
 String _photo(String name) => '$_api/fotos/$name.jpg';
@@ -397,12 +398,14 @@ Future<void> _shot(WidgetTester tester, String name) async {
   }
   final boundary = _boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
   final bytes = await tester.runAsync(() async {
-    final image = await boundary.toImage(pixelRatio: 2);
+    final image = await boundary.toImage(pixelRatio: _playStore ? 3 : 2);
     return (await image.toByteData(format: ui.ImageByteFormat.png))!;
   });
   _out.createSync(recursive: true);
   debugDisableShadows = true;
-  final file = File('${_out.path}/$name.png');
+  final file = _playStore
+      ? File('../store/${name.split('/')[0]}/android/images/${name.split('/')[1]}.png')
+      : File('${_out.path}/$name.png');
   file.parent.createSync(recursive: true);
   file.writeAsBytesSync(bytes!.buffer.asUint8List());
 }
@@ -418,7 +421,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   Future<void> phone(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.physicalSize = _playStore ? const Size(1080, 1920) : const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     // sombras de verdade (o flutter_test desenha um contorno preto no lugar); _shot volta ao padrão depois da foto
